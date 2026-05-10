@@ -1183,7 +1183,7 @@
                     }
 
                     this._updateButtonStates();
-                    this._log(`应用已解锁 - ${mode === 'special' ? '特殊模式' : mode === 'guest' ? '访客模式' : '普通模式'}`);
+                    //this._log(`应用已解锁 - ${mode === 'special' ? '特殊模式' : mode === 'guest' ? '访客模式' : '普通模式'}`);
                     this._setStatus('就绪', 'active');
                     this._checkCachedData();
                 }
@@ -1365,7 +1365,7 @@
                     if (this.specialMode) {
                         if (this.correctRulesApplyCount >= 3) return;
                         this.correctRulesApplyCount++;
-                        this._log(`special_mode：执行第 ${this.correctRulesApplyCount} 次规则修正`);
+                        //this._log(`special_mode：执行第 ${this.correctRulesApplyCount} 次规则修正`);
                     }
                     const rows = 8, cols = 7;
 
