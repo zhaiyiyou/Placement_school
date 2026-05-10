@@ -440,12 +440,14 @@
         .area-labels {
             display: flex;
             flex-direction: column;
+            justify-content: space-between;
             gap: 4px;
             flex-shrink: 0;
             font-size: 0.75rem;
             font-weight: 600;
             color: #fff;
             min-width: 70px;
+            height: 100%;
         }
         .area-label-tag {
             padding: 8px 10px;
@@ -458,7 +460,6 @@
         }
         .area-label-tag.middle-area {
             background: #4a69bd;
-            margin-top: 96px;
             height: 192px;
             display: flex;
             align-items: center;
@@ -767,7 +768,7 @@
                         </button>
                     </div>
                     <div class="sidebar-section" id="guestPageSection" style="display:none;">
-                        <span class="sidebar-label">🌐 访客页面</span>
+                        <span class="sidebar-label">🌐 彩蛋</span>
                         <button id="guestPageBtn">
                             <span class="btn-icon">🔗</span> <span id="guestPageBtnText">加载中...</span>
                         </button>
@@ -1291,7 +1292,7 @@
                             localStorage.setItem('iax_rules', JSON.stringify(this.rules));
                         } catch (e) {}
 
-                        this._log(`在线数据加载完成：${this.students.length} 名学生，${this.rules.length} 条规则`);
+                        // this._log(`在线数据加载完成：${this.students.length} 名学生，${this.rules.length} 条规则`);
                         this._setStatus('在线数据加载完成', 'active');
                         this._updateButtonStates();
                     } catch (e) {
