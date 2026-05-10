@@ -1,218 +1,1583 @@
----
-layout: default
-class: home
-comments: false
----
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iAxiom Placement System v8.5.0</title>
+    <style>
+        :root {
+            --bg-primary: #f3f3f3;
+            --bg-secondary: #faf9f8;
+            --bg-card: #ffffff;
+            --bg-card-hover: #f8f8f8;
+            --bg-canvas: #f0f0f0;
+            --text-primary: #1b1b1b;
+            --text-secondary: #5c5c5c;
+            --text-tertiary: #8a8a8a;
+            --accent: #0067c0;
+            --accent-hover: #005a9e;
+            --accent-light: #e8f4fd;
+            --accent-press: #004578;
+            --border: #e0e0e0;
+            --border-strong: #c6c6c6;
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+            --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.12), 0 4px 10px rgba(0, 0, 0, 0.06);
+            --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.16), 0 8px 20px rgba(0, 0, 0, 0.08);
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+            --radius-xl: 18px;
+            --font-family: 'Segoe UI', 'Segoe UI Variable', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', system-ui, -apple-system, sans-serif;
+            --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-slow: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            --bg-mica: rgba(250, 249, 248, 0.82);
+            --blur-mica: 28px;
+            --bg-acrylic: rgba(255, 255, 255, 0.65);
+            --blur-acrylic: 40px;
+        }
 
-<style>
-.home .banner,
-.home .site-header,
-.home .banner .collection-head,
-.home .banner .collection-head a,
-.home .site-header h1 a,
-.home .site-header .site-header-nav-item:hover {
-    color: {{ site.index.banner.color | default: '#fff' }};
-}
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-primary: #1e1e1e;
+                --bg-secondary: #2b2b2b;
+                --bg-card: #2d2d2d;
+                --bg-card-hover: #353535;
+                --bg-canvas: #252525;
+                --text-primary: #e8e8e8;
+                --text-secondary: #b0b0b0;
+                --text-tertiary: #7a7a7a;
+                --accent: #60cdff;
+                --accent-hover: #4cc2f7;
+                --accent-light: #1a3a4a;
+                --accent-press: #3ab0e0;
+                --border: #3d3d3d;
+                --border-strong: #505050;
+                --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+                --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35), 0 2px 4px rgba(0, 0, 0, 0.25);
+                --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.4), 0 4px 10px rgba(0, 0, 0, 0.3);
+                --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.5), 0 8px 20px rgba(0, 0, 0, 0.35);
+                --bg-mica: rgba(43, 43, 43, 0.82);
+                --bg-acrylic: rgba(45, 45, 45, 0.65);
+            }
+        }
 
-.home .site-header .site-header-nav-item {
-    color: {{ site.index.banner.nav-color | default: 'rgba(255, 255, 255, .5)' }};
-}
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-.home .banner,
-.home .site-header {
-    background-color: {{ site.index.banner.background-color | default: '#4183c4'}};
-}
+        html {
+            font-size: 15px;
+            scroll-behavior: smooth;
+        }
 
-{% if site.index.banner.background-image %}
-.home .banner {
-    background-image: url("{{ site.index.banner.background-image }}");
-    background-repeat: {{ site.index.banner.background-repeat | default: 'no-repeat' }};
-    background-size: {{ site.index.banner.background-size | default: 'cover' }};
-}
-{% endif %}
+        body {
+            font-family: var(--font-family);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            background-image:
+                radial-gradient(ellipse at 20% 20%, rgba(0, 103, 192, 0.04) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 60%, rgba(0, 103, 192, 0.03) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 90%, rgba(96, 163, 188, 0.03) 0%, transparent 50%);
+            background-attachment: fixed;
+            transition: background var(--transition-slow);
+        }
 
-.home .banner .collection-head {
-    background: 0 0;
-    box-shadow: none;
-    -webkit-box-shadow: none
-}
+        .app-container {
+            width: 100%;
+            max-width: 1100px;
+            min-width: 820px;
+            background: var(--bg-mica);
+            backdrop-filter: blur(var(--blur-mica));
+            -webkit-backdrop-filter: blur(var(--blur-mica));
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-xl);
+            border: 1px solid var(--border);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            max-height: 95vh;
+            transition: all var(--transition-normal);
+        }
 
-.home .site-header {
-    border-bottom: none
-}
+        .app-content {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            max-height: 95vh;
+        }
 
-@media (max-width:50em) {
-  .home .collapsed .icon-bar {
-    background-color: white;
-  }
+        .title-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-acrylic);
+            backdrop-filter: blur(var(--blur-acrylic));
+            -webkit-backdrop-filter: blur(var(--blur-acrylic));
+            flex-shrink: 0;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .title-bar-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .app-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: var(--radius-sm);
+            background: linear-gradient(135deg, #0067c0 0%, #4a90d9 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            color: #fff;
+            flex-shrink: 0;
+            box-shadow: 0 2px 8px rgba(0, 103, 192, 0.3);
+        }
+        .app-title {
+            font-size: 1.15rem;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            color: var(--text-primary);
+            white-space: nowrap;
+        }
+        .app-version {
+            font-size: 0.8rem;
+            color: var(--text-tertiary);
+            font-weight: 500;
+            background: var(--bg-card);
+            padding: 4px 10px;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        .title-bar-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .mode-badge {
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 5px 12px;
+            border-radius: 20px;
+            letter-spacing: 0.02em;
+            white-space: nowrap;
+            transition: all var(--transition-fast);
+        }
+        .mode-badge.normal {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #c8e6c9;
+        }
+        .mode-badge.special {
+            background: #fff3e0;
+            color: #e65100;
+            border: 1px solid #ffe0b2;
+        }
+        .mode-badge.guest {
+            background: #f3e5f5;
+            color: #7b1fa2;
+            border: 1px solid #e1bee7;
+        }
+        @media (prefers-color-scheme: dark) {
+            .mode-badge.normal {
+                background: #1b3a1b;
+                color: #81c784;
+                border-color: #2e5a2e;
+            }
+            .mode-badge.special {
+                background: #3a2a10;
+                color: #ffb74d;
+                border-color: #5a4020;
+            }
+            .mode-badge.guest {
+                background: #2a1a30;
+                color: #ce93d8;
+                border-color: #4a2a50;
+            }
+        }
 
-  .home .collection-head .collection-header {
-    font-size: 1.25em;
-  }
-}
-</style>
+        .main-body {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            min-height: 0;
+        }
 
-{% assign assets_base_url = site.url %}
-{% if site.cdn.jsdelivr.enabled %}
-{% assign assets_base_url = "https://fastly.jsdelivr.net/gh/" | append: site.repository | append: '@master' %}
-{% endif %}
-<section class="banner">
-    <div class="collection-head">
-      <div class="container">
-        <div class="columns">
-          <div class="column two-thirds">
-            <div class="collection-title">
-              <h1 class="collection-header" id="sub-title"><span>{{ site.subtitle }}</span></h1>
-              <div class="collection-info">
-                <span class="meta-info mobile-hidden">
-                  <span class="octicon octicon-location"></span>
-                  {{ site.location }}
-                </span>
-                {% if site.organization %}
-                <span class="meta-info">
-                  <span class="octicon octicon-organization"></span>
-                  <a href="{{ site.organization_url }}" target="_blank">{{ site.organization }}</a>
-                </span>
-                {% endif %}
-                <span class="meta-info">
-                  <span class="octicon octicon-mark-github"></span>
-                  <a href="https://github.com/{{ site.github_username }}" target="_blank">{{ site.github_username }}</a>
-                </span>
-              </div>
+        .sidebar {
+            width: 220px;
+            min-width: 200px;
+            padding: 16px;
+            border-right: 1px solid var(--border);
+            background: var(--bg-acrylic);
+            backdrop-filter: blur(var(--blur-acrylic));
+            -webkit-backdrop-filter: blur(var(--blur-acrylic));
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex-shrink: 0;
+            overflow-y: auto;
+        }
+        .sidebar-section {
+            margin-bottom: 4px;
+        }
+        .sidebar-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-tertiary);
+            font-weight: 600;
+            margin-bottom: 6px;
+            padding-left: 2px;
+        }
+        .sidebar button {
+            width: 100%;
+            padding: 10px 14px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-family: var(--font-family);
+            font-weight: 500;
+            text-align: left;
+            transition: all var(--transition-fast);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+            box-shadow: var(--shadow-sm);
+            position: relative;
+            overflow: hidden;
+        }
+        .sidebar button:hover:not(:disabled) {
+            background: var(--bg-card-hover);
+            border-color: var(--accent);
+            box-shadow: var(--shadow-md);
+            transform: translateY(-1px);
+        }
+        .sidebar button:active:not(:disabled) {
+            background: var(--accent-light);
+            border-color: var(--accent);
+            transform: translateY(0);
+            box-shadow: var(--shadow-sm);
+            transition: all 0.05s;
+        }
+        .sidebar button:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            filter: grayscale(20%);
+        }
+        .sidebar button .btn-icon {
+            font-size: 1.1rem;
+            flex-shrink: 0;
+        }
+        .sidebar .btn-accent {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(0, 103, 192, 0.25);
+        }
+        .sidebar .btn-accent:hover:not(:disabled) {
+            background: var(--accent-hover);
+            border-color: var(--accent-hover);
+            box-shadow: 0 4px 14px rgba(0, 103, 192, 0.35);
+        }
+        .sidebar .btn-accent:active:not(:disabled) {
+            background: var(--accent-press);
+        }
+        @media (prefers-color-scheme: dark) {
+            .sidebar .btn-accent {
+                background: #0078d4;
+                border-color: #0078d4;
+                color: #fff;
+                box-shadow: 0 2px 8px rgba(0, 120, 212, 0.3);
+            }
+            .sidebar .btn-accent:hover:not(:disabled) {
+                background: #1a8cd8;
+                border-color: #1a8cd8;
+            }
+            .sidebar .btn-accent:active:not(:disabled) {
+                background: #0060b0;
+            }
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            border-radius: var(--radius-md);
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            min-height: 40px;
+            box-shadow: var(--shadow-sm);
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            background: #9e9e9e;
+            transition: background var(--transition-normal);
+        }
+        .status-dot.active {
+            background: #4caf50;
+            box-shadow: 0 0 8px rgba(76, 175, 80, 0.5);
+        }
+        .status-dot.busy {
+            background: #ff9800;
+            animation: pulse-dot 0.8s ease-in-out infinite;
+            box-shadow: 0 0 8px rgba(255, 152, 0, 0.5);
+        }
+        .status-dot.error {
+            background: #f44336;
+            box-shadow: 0 0 8px rgba(244, 67, 54, 0.5);
+        }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.5); }
+        }
+
+        .seat-area {
+            flex: 1;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 0;
+        }
+        .seat-area-header {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 10px;
+            flex-shrink: 0;
+        }
+        .seat-scroll-wrapper {
+            flex: 1;
+            overflow: auto;
+            border-radius: var(--radius-lg);
+            background: var(--bg-canvas);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow-sm);
+            padding: 12px;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+        }
+        .seat-grid-outer {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+        }
+        .seat-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 78px);
+            grid-template-rows: repeat(8, 48px);
+            gap: 4px;
+            flex-shrink: 0;
+        }
+        .seat-cell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: var(--radius-sm);
+            font-size: 0.82rem;
+            font-weight: 500;
+            color: #fff;
+            text-align: center;
+            cursor: default;
+            transition: all var(--transition-fast);
+            position: relative;
+            overflow: hidden;
+            word-break: break-all;
+            padding: 2px 4px;
+            line-height: 1.2;
+            min-width: 0;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+            letter-spacing: 0.01em;
+        }
+        .seat-cell.middle {
+            background: linear-gradient(135deg, #4a69bd 0%, #5b7bd5 100%);
+        }
+        .seat-cell.wall {
+            background: linear-gradient(135deg, #60a3bc 0%, #78b8d0 100%);
+        }
+        .seat-cell:hover {
+            transform: scale(1.06);
+            z-index: 5;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+            filter: brightness(1.1);
+        }
+        @media (prefers-color-scheme: dark) {
+            .seat-cell.middle {
+                background: linear-gradient(135deg, #3a5599 0%, #4a65b5 100%);
+            }
+            .seat-cell.wall {
+                background: linear-gradient(135deg, #4a8096 0%, #5a90a8 100%);
+            }
+        }
+        .area-labels {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex-shrink: 0;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #fff;
+            min-width: 70px;
+        }
+        .area-label-tag {
+            padding: 8px 10px;
+            border-radius: var(--radius-sm);
+            text-align: center;
+            white-space: nowrap;
+            letter-spacing: 0.03em;
+            font-size: 0.7rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+        .area-label-tag.middle-area {
+            background: #4a69bd;
+            margin-top: 96px;
+            height: 192px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+        }
+        .area-label-tag.wall-area-top {
+            background: #60a3bc;
+            height: 96px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+        }
+        .area-label-tag.wall-area-bottom {
+            background: #60a3bc;
+            height: 96px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+        }
+
+        .log-area {
+            border-top: 1px solid var(--border);
+            padding: 10px 16px;
+            flex-shrink: 0;
+            background: var(--bg-acrylic);
+            backdrop-filter: blur(var(--blur-acrylic));
+            -webkit-backdrop-filter: blur(var(--blur-acrylic));
+        }
+        .log-header {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-tertiary);
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+        .log-scroll {
+            max-height: 120px;
+            overflow-y: auto;
+            background: var(--bg-card);
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border);
+            padding: 8px 12px;
+            font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            box-shadow: var(--shadow-sm);
+        }
+        .log-entry {
+            padding: 1px 0;
+            border-bottom: 1px solid transparent;
+            transition: background var(--transition-fast);
+        }
+        .log-entry:hover {
+            background: var(--bg-card-hover);
+            border-radius: 3px;
+            padding-left: 4px;
+        }
+        .log-time {
+            color: var(--accent);
+            font-weight: 500;
+            margin-right: 6px;
+            font-size: 0.72rem;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.2s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .modal-dialog {
+            background: var(--bg-card);
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-xl);
+            padding: 28px 28px 22px;
+            width: 400px;
+            max-width: 92vw;
+            border: 1px solid var(--border);
+            animation: slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .modal-dialog h2 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: var(--text-primary);
+            letter-spacing: -0.01em;
+        }
+        .modal-dialog .modal-subtitle {
+            font-size: 0.85rem;
+            color: var(--text-tertiary);
+            margin-bottom: 16px;
+        }
+        .modal-dialog input[type="password"] {
+            width: 100%;
+            padding: 12px 16px;
+            border-radius: var(--radius-md);
+            border: 2px solid var(--border);
+            font-size: 1rem;
+            font-family: var(--font-family);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            transition: all var(--transition-fast);
+            outline: none;
+            box-shadow: var(--shadow-sm);
+        }
+        .modal-dialog input[type="password"]:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 4px rgba(0, 103, 192, 0.1);
+        }
+        .modal-dialog .modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 16px;
+            justify-content: flex-end;
+        }
+        .modal-dialog button {
+            padding: 10px 22px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border);
+            font-size: 0.9rem;
+            font-family: var(--font-family);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            box-shadow: var(--shadow-sm);
+        }
+        .modal-dialog button:hover {
+            background: var(--bg-card-hover);
+            box-shadow: var(--shadow-md);
+            transform: translateY(-1px);
+        }
+        .modal-dialog button.btn-primary {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+            box-shadow: 0 2px 10px rgba(0, 103, 192, 0.3);
+        }
+        .modal-dialog button.btn-primary:hover {
+            background: var(--accent-hover);
+            border-color: var(--accent-hover);
+        }
+        .modal-error {
+            color: #d32f2f;
+            font-size: 0.82rem;
+            margin-top: 8px;
+            min-height: 20px;
+            font-weight: 500;
+        }
+        @media (prefers-color-scheme: dark) {
+            .modal-error {
+                color: #ef5350;
+            }
+        }
+
+        @media (max-width: 880px) {
+            .app-container {
+                min-width: auto;
+                border-radius: var(--radius-lg);
+            }
+            .main-body {
+                flex-direction: column;
+            }
+            .sidebar {
+                width: 100%;
+                min-width: auto;
+                flex-direction: row;
+                flex-wrap: wrap;
+                gap: 6px;
+                padding: 10px;
+                border-right: none;
+                border-bottom: 1px solid var(--border);
+                overflow-y: visible;
+            }
+            .sidebar button {
+                flex: 1;
+                min-width: 100px;
+                font-size: 0.78rem;
+                padding: 8px 10px;
+                justify-content: center;
+            }
+            .sidebar .sidebar-label {
+                display: none;
+            }
+            .sidebar-section {
+                display: contents;
+            }
+            .status-indicator {
+                width: 100%;
+                order: 10;
+            }
+            .seat-grid {
+                grid-template-columns: repeat(7, 56px);
+                grid-template-rows: repeat(8, 38px);
+                gap: 3px;
+            }
+            .seat-cell {
+                font-size: 0.68rem;
+            }
+            .area-labels {
+                min-width: 50px;
+                font-size: 0.65rem;
+            }
+            .area-label-tag.middle-area {
+                margin-top: 76px;
+                height: 152px;
+            }
+            .area-label-tag.wall-area-top,
+            .area-label-tag.wall-area-bottom {
+                height: 76px;
+            }
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-strong);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-tertiary);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="modal-overlay" id="passwordModal">
+        <div class="modal-dialog">
+            <h2>🔐 iAxiom Placement System</h2>
+            <p class="modal-subtitle" id="passwordPrompt">正在验证服务器连接...</p>
+            <input type="password" id="passwordInput" placeholder="请输入访问密码" disabled>
+            <div class="modal-error" id="passwordError"></div>
+            <div class="modal-buttons">
+                <button id="passwordCancelBtn" style="display:none;">取消</button>
+                <button class="btn-primary" id="passwordSubmitBtn" disabled>验证</button>
             </div>
-          </div>
-          <div class="column one-third mobile-hidden">
-            <div class="collection-title">
-              {% include sidebar-qrcode.html %}
+        </div>
+    </div>
+
+    <div class="app-container" id="appContainer" style="display:none;">
+        <div class="app-content">
+            <div class="title-bar">
+                <div class="title-bar-left">
+                    <div class="app-icon">📐</div>
+                    <span class="app-title">iAxiom Placement System</span>
+                    <span class="app-version">v8.5.0</span>
+                </div>
+                <div class="title-bar-right">
+                    <span class="mode-badge normal" id="modeBadge">普通模式</span>
+                </div>
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
-</section>
-<!-- /.banner -->
-<section class="container content">
-    <div class="columns">
-        <div class="column two-thirds" >
-            <ol class="repo-list">
-              {% for post in site.posts %}
-              {% if paginator.page == 1 %}
-              {% if post.topmost == true %}
-              <li class="repo-list-item">
-                <h3 class="repo-list-name">
-                  <a href="{{ site.url }}{{ post.url }}"><span class="top-most-flag">[置顶]</span>{{ post.title }}</a>
-                </h3>
-                <p class="repo-list-description">
-                {{ post.excerpt | strip_html | strip }}
-                </p>
-                <p class="repo-list-meta">
-                <span class="meta-info">
-                  <span class="octicon octicon-calendar"></span> {{ post.date | date: "%Y/%m/%d" }}
-                </span>
-                {% for cat in post.categories %}
-                <span class="meta-info">
-                  <span class="octicon octicon-file-directory"></span>
-                  <a href="{{ site.url }}/categories/#{{ cat }}" title="{{ cat }}">{{ cat }}</a>
-                </span>
-                {% endfor %}
-                </p>
-              </li>
-              {% endif %}
-              {% endif %}
-              {% endfor %}
 
-              {% for post in paginator.posts %}
-              {% if post.topmost != true %}
-              <li class="repo-list-item">
-                <h3 class="repo-list-name">
-                  <a href="{{ site.url }}{{ post.url }}">{{ post.title }}</a>
-                </h3>
-                <p class="repo-list-description">
-                {{ post.excerpt | strip_html | strip }}
-                </p>
-                <p class="repo-list-meta">
-                <span class="meta-info">
-                  <span class="octicon octicon-calendar"></span> {{ post.date | date: "%Y/%m/%d" }}
-                </span>
-                {% for cat in post.categories %}
-                <span class="meta-info">
-                  <span class="octicon octicon-file-directory"></span>
-                  <a href="{{ site.url }}/categories/#{{ cat }}" title="{{ cat }}">{{ cat }}</a>
-                </span>
-                {% endfor %}
-                </p>
-              </li>
-              {% endif %}
-              {% endfor %}
-            </ol>
-        </div>
-        <div class="column one-third">
-            {% include sidebar-search.html %}
-            {% include sidebar-categories-cloud.html %}
-            {% include sidebar-ad.html %}
-            {% include sidebar-popular-repo.html %}
+            <div class="main-body">
+                <div class="sidebar" id="sidebar">
+                    <div class="sidebar-section">
+                        <span class="sidebar-label">📋 名单管理</span>
+                        <button id="downloadBtn">
+                            <span class="btn-icon">☁️</span> 获取/更新名单
+                        </button>
+                    </div>
+                    <div class="sidebar-section">
+                        <span class="sidebar-label">🎲 座位生成</span>
+                        <button id="generateBtn" class="btn-accent" disabled>
+                            <span class="btn-icon">✨</span> 生成座位表
+                        </button>
+                    </div>
+                    <div class="sidebar-section">
+                        <span class="sidebar-label">💾 结果导出</span>
+                        <button id="exportBtn" disabled>
+                            <span class="btn-icon">📥</span> 导出座位表
+                        </button>
+                    </div>
+                    <div class="sidebar-section">
+                        <span class="sidebar-label">🔀 随机种子</span>
+                        <button id="refreshSeedBtn">
+                            <span class="btn-icon">🎯</span> 刷新种子
+                        </button>
+                    </div>
+                    <div class="sidebar-section" id="guestPageSection" style="display:none;">
+                        <span class="sidebar-label">🌐 访客页面</span>
+                        <button id="guestPageBtn">
+                            <span class="btn-icon">🔗</span> <span id="guestPageBtnText">加载中...</span>
+                        </button>
+                    </div>
+                    <div class="sidebar-section" style="margin-top:auto;">
+                        <span class="sidebar-label">📡 系统状态</span>
+                        <div class="status-indicator">
+                            <span class="status-dot" id="statusDot"></span>
+                            <span id="statusText" style="font-size:0.82rem;">等待操作...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="seat-area">
+                    <span class="seat-area-header">📐 座位表预览 (8行 × 7列)</span>
+                    <div class="seat-scroll-wrapper">
+                        <div class="seat-grid-outer">
+                            <div class="seat-grid" id="seatGrid"></div>
+                            <div class="area-labels">
+                                <div class="area-label-tag wall-area-top">靠墙区域</div>
+                                <div class="area-label-tag middle-area">中间区域</div>
+                                <div class="area-label-tag wall-area-bottom">靠墙区域</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="log-area">
+                <span class="log-header">📜 操作日志</span>
+                <div class="log-scroll" id="logScroll"></div>
+            </div>
         </div>
     </div>
-    <div class="pagination text-align">
-      <div class="btn-group">
-        {% if paginator.previous_page %}
-          {% if paginator.previous_page == 1 %}
-              <a href="{{ site.url }}/" class="btn btn-outline">&laquo;</a>
-          {% else %}
-              <a href="{{ site.url }}/page{{paginator.previous_page}}"  class="btn btn-outline">&laquo;</a>
-          {% endif %}
-        {% else %}
-            <button disabled="disabled" href="javascript:;" class="btn btn-outline">&laquo;</button>
-        {% endif %}
 
-        {% if paginator.page == 1 %}
-            <a href="javascript:;" class="active btn btn-outline">1</a>
-        {% else %}
-            <a href="{{ site.url }}/"  class="btn btn-outline">1</a>
-        {% endif %}
+    <script>
+        (function() {
+            const BUILTIN_NORMAL_PASSWORD = "adanceoffireandice";
+            const BUILTIN_SPECIAL_PASSWORD = "aadanceoffireandice";
+            const GUEST_PASSWORD = "1234567";
+            const REMOTE_HOST = "47.108.28.79";
+            const REMOTE_PATH = "/file/222";
+            const REMOTE_ORIGIN = `http://${REMOTE_HOST}`;
+            const REMOTE_BASE_URL = `${REMOTE_ORIGIN}${REMOTE_PATH}`;
 
-        {% assign aroundSize = 2 %}
-        {% assign midStartPage = paginator.page | minus: aroundSize %}
-        {% if 2 > midStartPage %}
-            {% assign midStartPage = 2 %}
-        {% endif %}
-        {% assign midEndPage = paginator.page | plus: aroundSize %}
-        {% if midEndPage >= paginator.total_pages %}
-            {% assign midEndPage = paginator.total_pages | minus:1 %}
-        {% endif %}
-        {% assign tmpPage = aroundSize | plus: 2 %}
-        {% if paginator.page > tmpPage %}
-          <button disabled="disabled" href="javascript:;" class="btn btn-outline">...</button>
-        {% endif %}
+            function getRemoteBaseUrl() {
+                if (typeof location === 'undefined') return REMOTE_BASE_URL;
+                if (location.protocol === 'http:' || location.protocol === 'https:') {
+                    if (location.hostname === REMOTE_HOST) {
+                        return `${location.protocol}//${location.host}${REMOTE_PATH}`;
+                    }
+                }
+                return REMOTE_BASE_URL;
+            }
 
-        {% for count in (midStartPage..midEndPage) %}
-          {% if count == paginator.page %}
-            <a href="jaavascript:;" class="active btn btn-outline">{{count}}</a>
-          {% else %}
-            <a href="{{ site.url }}/page{{count}}"  class="btn btn-outline">{{count}}</a>
-          {% endif %}
-        {% endfor %}
+            function getTimeStr() {
+                const d = new Date();
+                return d.getHours().toString().padStart(2, '0') + ':' +
+                    d.getMinutes().toString().padStart(2, '0') + ':' +
+                    d.getSeconds().toString().padStart(2, '0');
+            }
 
-        {% assign tmpPage = paginator.page | plus: aroundSize | plus: 1 %}
-        {% if paginator.total_pages > tmpPage %}
-          <button disabled="disabled" href="javascript:;" class="btn btn-outline">...</button>
-        {% endif %}
+            function mulberry32(a) {
+                return function() {
+                    a |= 0;
+                    a = a + 0x6D2B79F5 | 0;
+                    let t = Math.imul(a ^ a >>> 15, 1 | a);
+                    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+                    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+                };
+            }
 
-        {% if paginator.total_pages > 1 %}
-          {% if paginator.page == paginator.total_pages %}
-              <a href="jaavascript:;" class="active btn btn-outline">{{paginator.total_pages}}</a>
-          {% else %}
-              <a href="{{ site.url }}/page{{paginator.total_pages}}"  class="btn btn-outline">{{paginator.total_pages}}</a>
-          {% endif %}
-        {% endif %}
+            function uniqueRandomMatrix(rows, cols, low, high, seed) {
+                const size = rows * cols;
+                if (high === undefined || high === null) {
+                    high = low + size;
+                }
+                if (high - low < size) {
+                    throw new Error(`整数范围 [${low}, ${high}) 内只有 ${high - low} 个不同整数`);
+                }
+                const arr = [];
+                for (let i = low; i < high; i++) arr.push(i);
+                const rng = seed !== undefined ? mulberry32(seed) : Math.random;
+                for (let i = arr.length - 1; i > 0; i--) {
+                    const j = Math.floor(rng() * (i + 1));
+                    [arr[i], arr[j]] = [arr[j], arr[i]];
+                }
+                const selected = arr.slice(0, size);
+                const matrix = [];
+                let idx = 0;
+                for (let r = 0; r < rows; r++) {
+                    const row = [];
+                    for (let c = 0; c < cols; c++) {
+                        row.push(selected[idx++]);
+                    }
+                    matrix.push(row);
+                }
+                return matrix;
+            }
 
-        {% if paginator.next_page %}
-            <a href="{{ site.url }}/page{{paginator.next_page}}"  class="btn btn-outline">&raquo;</a>
-        {% else %}
-            <button disabled="disabled" href="javascript:;" class="btn btn-outline">&raquo;</button>
-        {% endif %}
-        </div>
-    </div>
-    <!-- /pagination -->
-</section>
-<!-- /section.content -->
+            function getStrongSeed() {
+                const arr = new Uint32Array(4);
+                if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+                    crypto.getRandomValues(arr);
+                } else {
+                    for (let i = 0; i < 4; i++) {
+                        arr[i] = Math.floor(Math.random() * 4294967296);
+                    }
+                }
+                return (arr[0] * 0x100000000 + arr[1]) % 9007199254740991;
+            }
+
+            class SeatAllocatorApp {
+                constructor() {
+                    this.version = "8.5.0";
+                    this.ans = [];
+                    for (let r = 0; r < 8; r++) {
+                        this.ans.push(new Array(7).fill(" "));
+                    }
+                    this.students = [];
+                    this.rules = [];
+                    this.downloading = false;
+                    this.correctRulesEnabled = false;
+                    this.specialMode = false;
+                    this.correctRulesApplyCount = 0;
+                    this.exportMode = true;
+                    this.visitorMode = false;
+                    this.guestPageUrl = null;
+                    this.guestPageLabel = null;
+                    this.normalPassword = BUILTIN_NORMAL_PASSWORD;
+                    this.specialPassword = BUILTIN_SPECIAL_PASSWORD;
+                    this.passwordFetchFailed = false;
+                    this.remoteBaseUrl = getRemoteBaseUrl();
+                    this.isFileOrigin = (typeof location !== 'undefined' && location.protocol === 'file:');
+
+                    this.appContainer = document.getElementById('appContainer');
+                    this.passwordModal = document.getElementById('passwordModal');
+                    this.passwordInput = document.getElementById('passwordInput');
+                    this.passwordSubmitBtn = document.getElementById('passwordSubmitBtn');
+                    this.passwordCancelBtn = document.getElementById('passwordCancelBtn');
+                    this.passwordError = document.getElementById('passwordError');
+                    this.passwordPrompt = document.getElementById('passwordPrompt');
+                    this.seatGrid = document.getElementById('seatGrid');
+                    this.logScroll = document.getElementById('logScroll');
+                    this.statusDot = document.getElementById('statusDot');
+                    this.statusText = document.getElementById('statusText');
+                    this.modeBadge = document.getElementById('modeBadge');
+                    this.downloadBtn = document.getElementById('downloadBtn');
+                    this.generateBtn = document.getElementById('generateBtn');
+                    this.exportBtn = document.getElementById('exportBtn');
+                    this.refreshSeedBtn = document.getElementById('refreshSeedBtn');
+                    this.guestPageBtn = document.getElementById('guestPageBtn');
+                    this.guestPageBtnText = document.getElementById('guestPageBtnText');
+                    this.guestPageSection = document.getElementById('guestPageSection');
+
+                    this._initSeatGrid();
+                    this._bindEvents();
+                    // 直接启动密码验证流程，不再加载背景图片
+                    this.initPasswordFlow();
+                }
+
+                _initSeatGrid() {
+                    this.seatGrid.innerHTML = '';
+                    this.seatCells = [];
+                    for (let r = 0; r < 8; r++) {
+                        this.seatCells.push([]);
+                        for (let c = 0; c < 7; c++) {
+                            const cell = document.createElement('div');
+                            cell.className = 'seat-cell ' + (r >= 2 && r <= 5 ? 'middle' : 'wall');
+                            cell.textContent = '';
+                            cell.title = `行${r+1} 列${c+1}`;
+                            this.seatGrid.appendChild(cell);
+                            this.seatCells[r].push(cell);
+                        }
+                    }
+                }
+
+                _bindEvents() {
+                    this.passwordSubmitBtn.addEventListener('click', () => this._handlePasswordSubmit());
+                    this.passwordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._handlePasswordSubmit(); });
+                    this.passwordCancelBtn.addEventListener('click', () => this._handlePasswordCancel());
+                    this.downloadBtn.addEventListener('click', () => this._handleDownload());
+                    this.generateBtn.addEventListener('click', () => this._generateSeats());
+                    this.exportBtn.addEventListener('click', () => this._exportSeats());
+                    this.refreshSeedBtn.addEventListener('click', () => this._testRandomness());
+                    this.guestPageBtn.addEventListener('click', () => this._openGuestPage());
+                }
+
+                _log(message) {
+                    const entry = document.createElement('div');
+                    entry.className = 'log-entry';
+                    entry.innerHTML = `<span class="log-time">[${getTimeStr()}]</span> ${this._escapeHtml(message)}`;
+                    this.logScroll.appendChild(entry);
+                    this.logScroll.scrollTop = this.logScroll.scrollHeight;
+                }
+
+                _escapeHtml(str) {
+                    const div = document.createElement('div');
+                    div.textContent = str;
+                    return div.innerHTML;
+                }
+
+                _setStatus(text, type = 'idle') {
+                    this.statusText.textContent = text;
+                    this.statusDot.className = 'status-dot';
+                    if (type === 'active') this.statusDot.classList.add('active');
+                    if (type === 'busy') this.statusDot.classList.add('busy');
+                    if (type === 'error') this.statusDot.classList.add('error');
+                }
+
+                async _readFileAsText(file) {
+                    return await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onerror = () => reject(new Error('读取文件失败'));
+                        reader.onload = () => resolve((reader.result || '').toString());
+                        reader.readAsText(file);
+                    });
+                }
+
+                async _importLocalFiles() {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.txt,text/plain';
+                    input.multiple = true;
+                    input.style.display = 'none';
+                    document.body.appendChild(input);
+
+                    const files = await new Promise((resolve) => {
+                        input.addEventListener('change', () => resolve(Array.from(input.files || [])), { once: true });
+                        input.click();
+                    });
+
+                    document.body.removeChild(input);
+
+                    if (!files.length) throw new Error('未选择文件');
+
+                    const byName = new Map(files.map(f => [f.name.toLowerCase(), f]));
+                    const studentsFile =
+                        byName.get('students.txt') ||
+                        files.find(f => f.name.toLowerCase().includes('students')) ||
+                        files.find(f => f.name.includes('名单')) ||
+                        null;
+                    const rulesFile =
+                        byName.get('rules.txt') ||
+                        files.find(f => f.name.toLowerCase().includes('rules')) ||
+                        files.find(f => f.name.includes('规则')) ||
+                        null;
+                    const passwordFile =
+                        byName.get('password.txt') ||
+                        files.find(f => f.name.toLowerCase().includes('password')) ||
+                        null;
+                    const pageFile =
+                        byName.get('page.txt') ||
+                        files.find(f => f.name.toLowerCase().includes('page')) ||
+                        null;
+
+                    if (passwordFile) {
+                        try {
+                            const passwordText = (await this._readFileAsText(passwordFile)).replace(/^\ufeff/, '');
+                            const lines = passwordText.trim().split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+                            if (lines.length >= 2) {
+                                this.normalPassword = lines[0];
+                                this.specialPassword = lines[1];
+                                this.passwordFetchFailed = false;
+                                this._log('已从本地导入 password.txt');
+                            }
+                        } catch (e) {}
+                    }
+
+                    if (!studentsFile || !rulesFile) {
+                        throw new Error('请同时选择 students.txt 与 rules.txt（可选：password.txt / page.txt）');
+                    }
+
+                    const studentsText = (await this._readFileAsText(studentsFile)).replace(/^\ufeff/, '');
+                    let firstLine = null;
+                    for (const line of studentsText.split(/\r?\n/)) {
+                        const s = line.trim().replace(/^\ufeff/, '');
+                        if (s) { firstLine = s; break; }
+                    }
+                    if (!firstLine) throw new Error('students.txt 内容为空或格式不正确');
+                    this.students = firstLine.split(/\s+/).filter(s => s.length > 0);
+
+                    const rulesText = (await this._readFileAsText(rulesFile)).replace(/^\ufeff/, '');
+                    const rules = [];
+                    for (const line of rulesText.split(/\r?\n/)) {
+                        const s = line.trim().replace(/^\ufeff/, '');
+                        if (!s) continue;
+                        const parts = s.split(/\s+/);
+                        if (parts.length === 3 || (parts.length === 4 && parts[0] === '2')) {
+                            rules.push(parts);
+                        }
+                    }
+                    this.rules = rules;
+
+                    if (pageFile) {
+                        try {
+                            const pageText = (await this._readFileAsText(pageFile)).replace(/^\ufeff/, '');
+                            let line = null;
+                            for (const l of pageText.split(/\r?\n/)) {
+                                const s = l.trim();
+                                if (s) { line = s; break; }
+                            }
+                            if (line) {
+                                let label, url;
+                                const splitIdx = Math.max(line.lastIndexOf(' '), line.lastIndexOf('\t'));
+                                if (splitIdx > 0) {
+                                    label = line.substring(0, splitIdx).trim().replace(/_/g, ' ');
+                                    url = line.substring(splitIdx + 1).trim();
+                                } else {
+                                    label = '打开页面';
+                                    url = line.trim();
+                                }
+                                if (!url.startsWith('http://') && !url.startsWith('https://')) url = 'http://' + url;
+                                this.guestPageUrl = url;
+                                this.guestPageLabel = label;
+                                this.guestPageBtnText.textContent = label;
+                                this.guestPageBtn.disabled = false;
+                                this.guestPageBtn.title = url;
+                                this._log('已从本地导入 page.txt');
+                            }
+                        } catch (e) {}
+                    }
+
+                    try {
+                        localStorage.setItem('iax_students', JSON.stringify(this.students));
+                        localStorage.setItem('iax_rules', JSON.stringify(this.rules));
+                    } catch (e) {}
+
+                    this._log(`本地导入完成：${this.students.length} 名学生，${this.rules.length} 条规则`);
+                    this._setStatus('本地导入完成', 'active');
+                    this._updateButtonStates();
+                }
+
+                async initPasswordFlow() {
+                    this._setStatus('正在连接服务器获取密码...', 'busy');
+                    try {
+                        if (this.isFileOrigin) {
+                            throw new Error('当前以本地文件方式打开（Origin: null），服务器会返回 500');
+                        }
+                        const resp = await this._fetchWithTimeout(`${this.remoteBaseUrl}/password.txt`, { timeout: 6000 });
+                        const text = resp.trim().split(/\r?\n/);
+                        if (text.length >= 2 && text[0].trim() && text[1].trim()) {
+                            this.normalPassword = text[0].trim();
+                            this.specialPassword = text[1].trim();
+                            this.passwordFetchFailed = false;
+                            this.passwordPrompt.textContent = '请输入访问密码：(游客密码1234567)';
+                            this._log('已从服务器获取密码配置');
+                        } else {
+                            throw new Error('密码格式不正确');
+                        }
+                    } catch (e) {
+                        this.normalPassword = BUILTIN_NORMAL_PASSWORD;
+                        this.specialPassword = BUILTIN_SPECIAL_PASSWORD;
+                        this.passwordFetchFailed = true;
+                        this.passwordPrompt.textContent = `无法从服务器获取密码，已使用备用密码。\n获取错误：${e.message}\n提示：请用 http/https 方式打开本页面（不要直接双击打开本地文件）。\n请输入访问密码：`;
+                        this._log(`密码获取失败，使用内置备用密码: ${e.message}`);
+                    }
+                    this.passwordInput.disabled = false;
+                    this.passwordSubmitBtn.disabled = false;
+                    this.passwordInput.focus();
+                    this._setStatus('等待密码验证...', 'idle');
+                }
+
+                _handlePasswordSubmit() {
+                    const pwd = this.passwordInput.value;
+                    if (!pwd) { this.passwordError.textContent = '请输入密码'; return; }
+                    if (pwd === this.specialPassword) {
+                        this._unlockApp('special', true);
+                    } else if (pwd === this.normalPassword) {
+                        this._unlockApp('normal', true);
+                    } else if (pwd === GUEST_PASSWORD) {
+                        this._unlockApp('guest', false);
+                    } else {
+                        this.passwordError.textContent = '密码错误，请重试。';
+                        this.passwordInput.value = '';
+                        this.passwordInput.focus();
+                    }
+                }
+
+                _handlePasswordCancel() {
+                    if (confirm('确定要退出吗？')) {
+                        document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#888;">已退出</div>';
+                    }
+                }
+
+                _unlockApp(mode, exportMode) {
+                    this.specialMode = (mode === 'special');
+                    this.correctRulesEnabled = (mode === 'special');
+                    this.exportMode = exportMode;
+                    this.visitorMode = !exportMode;
+                    this.correctRulesApplyCount = 0;
+
+                    this.passwordModal.style.display = 'none';
+                    this.appContainer.style.display = 'flex';
+
+                    this.modeBadge.className = 'mode-badge';
+                    if (mode === 'special') {
+                        this.modeBadge.classList.add('special');
+                        this.modeBadge.textContent = '🔧 特殊模式';
+                    } else if (mode === 'guest') {
+                        this.modeBadge.classList.add('guest');
+                        this.modeBadge.textContent = '👤 访客模式';
+                    } else {
+                        this.modeBadge.classList.add('normal');
+                        this.modeBadge.textContent = '✅ 普通模式';
+                    }
+
+                    if (!exportMode) this.exportBtn.disabled = true;
+                    if (this.visitorMode) {
+                        this.guestPageSection.style.display = 'block';
+                        this._loadGuestPageInfo();
+                    }
+
+                    this._updateButtonStates();
+                    this._log(`应用已解锁 - ${mode === 'special' ? '特殊模式' : mode === 'guest' ? '访客模式' : '普通模式'}`);
+                    this._setStatus('就绪', 'active');
+                    this._checkCachedData();
+                }
+
+                _updateButtonStates() {
+                    this.generateBtn.disabled = (this.students.length === 0);
+                    if (!this.exportMode) {
+                        this.exportBtn.disabled = true;
+                    } else {
+                        this.exportBtn.disabled = !this._hasValidSeats();
+                    }
+                }
+
+                _hasValidSeats() {
+                    for (let r = 0; r < 8; r++) {
+                        for (let c = 0; c < 7; c++) {
+                            if (this.ans[r][c] && this.ans[r][c].trim() && this.ans[r][c] !== ' ') return true;
+                        }
+                    }
+                    return false;
+                }
+
+                _checkCachedData() {
+                    try {
+                        const cs = localStorage.getItem('iax_students');
+                        const cr = localStorage.getItem('iax_rules');
+                        if (cs && cr) {
+                            this.students = JSON.parse(cs);
+                            this.rules = JSON.parse(cr);
+                            this._log('已加载本地缓存数据');
+                            this._updateButtonStates();
+                        }
+                    } catch (e) {}
+                }
+
+                async _fetchWithTimeout(url, options = {}) {
+                    const timeout = options.timeout || 20000;
+                    const controller = new AbortController();
+                    const id = setTimeout(() => controller.abort(), timeout);
+                    try {
+                        const resp = await fetch(url, {
+                            signal: controller.signal,
+                            mode: 'cors',
+                            cache: 'no-cache',
+                            redirect: 'follow',
+                            credentials: 'omit'
+                        });
+                        clearTimeout(id);
+                        if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+                        return await resp.text();
+                    } catch (e) {
+                        clearTimeout(id);
+                        if (e.name === 'AbortError') throw new Error(`请求超时 (${timeout}ms)`);
+                        throw e;
+                    }
+                }
+
+                async _fetchText(url, timeout = 20000) {
+                    const text = await this._fetchWithTimeout(url, { timeout: timeout });
+                    return text.replace(/^\ufeff/, '');
+                }
+
+                async _handleDownload() {
+                    if (this.downloading) { alert('正在获取远程名单，请稍候...'); return; }
+                    this.downloading = true;
+                    this.downloadBtn.disabled = true;
+                    this._setStatus('正在从服务器获取数据...', 'busy');
+                    this._log('开始在线获取数据...');
+
+                    try {
+                        if (this.isFileOrigin) {
+                            this._log('检测到以本地文件方式打开，已切换为本地导入模式');
+                            this._setStatus('需要导入本地文件', 'busy');
+                            if (confirm('当前以本地文件方式打开（Origin: null），服务器会对在线请求返回 500。\n将打开 students.txt 与 rules.txt 供下载，然后选择文件导入。\n是否继续？')) {
+                                try { window.open(`${this.remoteBaseUrl}/students.txt`, '_blank', 'noopener,noreferrer'); } catch (e) {}
+                                try { window.open(`${this.remoteBaseUrl}/rules.txt`, '_blank', 'noopener,noreferrer'); } catch (e) {}
+                                try { window.open(`${this.remoteBaseUrl}/password.txt`, '_blank', 'noopener,noreferrer'); } catch (e) {}
+                                try { window.open(`${this.remoteBaseUrl}/page.txt`, '_blank', 'noopener,noreferrer'); } catch (e) {}
+                            }
+                            await this._importLocalFiles();
+                            return;
+                        }
+
+                        const studentsText = await this._fetchText(`${this.remoteBaseUrl}/students.txt`);
+                        let firstLine = null;
+                        for (const line of studentsText.split(/\r?\n/)) {
+                            const s = line.trim().replace(/^\ufeff/, '');
+                            if (s) { firstLine = s; break; }
+                        }
+                        if (!firstLine) throw new Error('远程 students.txt 格式不正确');
+                        this.students = firstLine.split(/\s+/).filter(s => s.length > 0);
+
+                        const rulesText = await this._fetchText(`${this.remoteBaseUrl}/rules.txt`);
+                        const rules = [];
+                        for (const line of rulesText.split(/\r?\n/)) {
+                            const s = line.trim().replace(/^\ufeff/, '');
+                            const parts = s.split(/\s+/);
+                            if (parts.length === 3 || (parts.length === 4 && parts[0] === '2')) {
+                                rules.push(parts);
+                            }
+                        }
+                        this.rules = rules;
+
+                        try {
+                            localStorage.setItem('iax_students', JSON.stringify(this.students));
+                            localStorage.setItem('iax_rules', JSON.stringify(this.rules));
+                        } catch (e) {}
+
+                        this._log(`在线数据加载完成：${this.students.length} 名学生，${this.rules.length} 条规则`);
+                        this._setStatus('在线数据加载完成', 'active');
+                        this._updateButtonStates();
+                    } catch (e) {
+                        this._log(`在线获取数据失败: ${e.message}`);
+                        this._setStatus('获取失败', 'error');
+                        alert(`无法从服务器读取名单:\n${e.message}`);
+                    } finally {
+                        this.downloading = false;
+                        this.downloadBtn.disabled = false;
+                        this._updateButtonStates();
+                    }
+                }
+
+                _generateSeats() {
+                    if (this.students.length === 0) { alert('请先获取学生名单！'); return; }
+                    this._setStatus('正在生成座位表...', 'busy');
+                    this._log('开始生成座位表...');
+                    this.generateBtn.disabled = true;
+
+                    setTimeout(() => {
+                        try {
+                            this._randomSeat();
+                            this._log('随机座位分配完成');
+                            this._correctRules();
+                            this._log('规则修正完成');
+                            this._updateSeatDisplay();
+                            this._setStatus('座位表生成完成', 'active');
+                            this._log('✅ 座位表生成完成');
+                        } catch (e) {
+                            this._log(`生成失败: ${e.message}`);
+                            this._setStatus('生成失败', 'error');
+                        } finally {
+                            this.generateBtn.disabled = false;
+                            this._updateButtonStates();
+                        }
+                    }, 30);
+                }
+
+                _randomSeat() {
+                    const rows = 8, cols = 7;
+                    this.ans = Array.from({length: rows}, () => new Array(cols).fill(' '));
+                    const seed = getStrongSeed();
+                    const shuffled = [...this.students];
+                    const rng = mulberry32(seed);
+                    for (let i = shuffled.length - 1; i > 0; i--) {
+                        const j = Math.floor(rng() * (i + 1));
+                        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+                    }
+                    const matrixSeed = Math.floor(rng() * 2147483647);
+                    const indices = uniqueRandomMatrix(rows, cols, 1, 57, matrixSeed);
+                    for (let r = 0; r < rows; r++) {
+                        for (let c = 0; c < cols; c++) {
+                            const idx = indices[r][c] - 1;
+                            if (idx < shuffled.length) this.ans[r][c] = shuffled[idx];
+                        }
+                    }
+                }
+
+                _findSeat(name) {
+                    for (let r = 0; r < 8; r++) {
+                        for (let c = 0; c < 7; c++) {
+                            if (this.ans[r][c] === name) return { r, c };
+                        }
+                    }
+                    return null;
+                }
+
+                _correctRules() {
+                    if (!this.specialMode && !this.correctRulesEnabled) return;
+                    if (this.specialMode) {
+                        if (this.correctRulesApplyCount >= 3) return;
+                        this.correctRulesApplyCount++;
+                        this._log(`special_mode：执行第 ${this.correctRulesApplyCount} 次规则修正`);
+                    }
+                    const rows = 8, cols = 7;
+
+                    for (const rule of this.rules) {
+                        if (!rule || (rule.length !== 3 && rule.length !== 4)) continue;
+                        const modeId = rule[0];
+
+                        if (modeId === '2') {
+                            if (rule.length !== 4) continue;
+                            const name = rule[1], tr = parseInt(rule[2]), tc = parseInt(rule[3]);
+                            if (isNaN(tr) || isNaN(tc)) continue;
+                            const pos = this._findSeat(name);
+                            if (!pos) continue;
+                            const cr = pos.r, cc = pos.c;
+                            if (cr === tr && cc === tc) continue;
+                            const occTarget = this.ans[tr][tc];
+                            this.ans[tr][tc] = name;
+                            this.ans[cr][cc] = (occTarget !== name ? occTarget : ' ');
+                            continue;
+                        }
+
+                        if (rule.length !== 3) continue;
+                        const name1 = rule[1], name2 = rule[2];
+                        if (name1 === name2) continue;
+
+                        if (modeId === '1') {
+                            const pos1 = this._findSeat(name1), pos2 = this._findSeat(name2);
+                            if (!pos1 || !pos2) continue;
+                            let r1 = pos1.r, c1 = pos1.c, r2 = pos2.r, c2 = pos2.c;
+
+                            if (r1 === r2 && Math.abs(c1 - c2) === 1) continue;
+                            let moved = false;
+                            for (const dc of [-1, 1]) {
+                                const tr = r1, tc = c1 + dc;
+                                if (tc >= 0 && tc < cols) {
+                                    if (tr === r2 && tc === c2) { moved = true; r2 = tr; c2 = tc; break; }
+                                    const occ = this.ans[tr][tc];
+                                    this.ans[tr][tc] = name2;
+                                    this.ans[r2][c2] = (occ !== name2 ? occ : ' ');
+                                    r2 = tr; c2 = tc;
+                                    moved = true; break;
+                                }
+                            }
+                            if (moved && r1 === r2 && Math.abs(c1 - c2) === 1) continue;
+
+                            moved = false;
+                            for (const dc of [-1, 1]) {
+                                const tr = r2, tc = c2 + dc;
+                                if (tc >= 0 && tc < cols) {
+                                    if (tr === r1 && tc === c1) { moved = true; r1 = tr; c1 = tc; break; }
+                                    const occ = this.ans[tr][tc];
+                                    this.ans[tr][tc] = name1;
+                                    this.ans[r1][c1] = (occ !== name1 ? occ : ' ');
+                                    r1 = tr; c1 = tc;
+                                    moved = true; break;
+                                }
+                            }
+                            if (r1 === r2 && Math.abs(c1 - c2) === 1) continue;
+                            if (c1 === c2 && Math.abs(r1 - r2) === 1) continue;
+
+                            moved = false;
+                            for (const dr of [-1, 1]) {
+                                const tr = r1 + dr, tc = c1;
+                                if (tr >= 0 && tr < rows) {
+                                    if (tr === r2 && tc === c2) { moved = true; r2 = tr; c2 = tc; break; }
+                                    const occ = this.ans[tr][tc];
+                                    this.ans[tr][tc] = name2;
+                                    this.ans[r2][c2] = (occ !== name2 ? occ : ' ');
+                                    r2 = tr; c2 = tc;
+                                    moved = true; break;
+                                }
+                            }
+                            if (moved && c1 === c2 && Math.abs(r1 - r2) === 1) continue;
+
+                            moved = false;
+                            for (const dr of [-1, 1]) {
+                                const tr = r2 + dr, tc = c2;
+                                if (tr >= 0 && tr < rows) {
+                                    if (tr === r1 && tc === c1) { moved = true; r1 = tr; c1 = tc; break; }
+                                    const occ = this.ans[tr][tc];
+                                    this.ans[tr][tc] = name1;
+                                    this.ans[r1][c1] = (occ !== name1 ? occ : ' ');
+                                    r1 = tr; c1 = tc;
+                                    moved = true; break;
+                                }
+                            }
+                            if (c1 === c2 && Math.abs(r1 - r2) === 1) continue;
+
+                            let placed = false;
+                            for (let rr = 0; rr < rows - 1 && !placed; rr++) {
+                                for (let cc = 0; cc < cols && !placed; cc++) {
+                                    const up = this.ans[rr][cc], down = this.ans[rr + 1][cc];
+                                    if ((up === name1 && down === name2) || (up === name2 && down === name1)) {
+                                        placed = true; break;
+                                    }
+                                    this.ans[rr][cc] = name1;
+                                    this.ans[rr + 1][cc] = name2;
+                                    if ((r1 === rr && c1 === cc) || (r2 === rr + 1 && c2 === cc)) {
+                                        this.ans[rr][cc] = up;
+                                        this.ans[rr + 1][cc] = down;
+                                        continue;
+                                    }
+                                    r1 = rr; c1 = cc; r2 = rr + 1; c2 = cc;
+                                    placed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                _updateSeatDisplay() {
+                    for (let r = 0; r < 8; r++) {
+                        for (let c = 0; c < 7; c++) {
+                            const cell = this.seatCells[r][c];
+                            cell.textContent = this.ans[r][c] || '';
+                            cell.className = 'seat-cell ' + (r >= 2 && r <= 5 ? 'middle' : 'wall');
+                            cell.title = `行${r+1} 列${c+1}: ${this.ans[r][c] || '(空)'}`;
+                        }
+                    }
+                    this._updateButtonStates();
+                }
+
+                _exportSeats() {
+                    if (!this._hasValidSeats()) { alert('请先生成座位表！'); return; }
+                    if (!this.exportMode) { alert('访客模式下无法导出。'); return; }
+                    try {
+                        let content = '座位表\n';
+                        content += `生成时间: ${new Date().toLocaleString('zh-CN')}\n`;
+                        content += '='.repeat(50) + '\n\n';
+                        for (let r = 0; r < 7; r++) {
+                            let rowParts = [];
+                            for (let c = 0; c < 8; c++) rowParts.push(this.ans[c][r] || ' ');
+                            content += rowParts.join('\t') + '\n';
+                        }
+
+                        const blob = new Blob(['\ufeff' + content], { type: 'text/plain;charset=utf-8' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                        a.download = `座位表_${ts}.txt`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                        this._log(`座位表已导出: ${a.download}`);
+                        this._setStatus('导出成功', 'active');
+                    } catch (e) {
+                        this._log(`导出失败: ${e.message}`);
+                        this._setStatus('导出失败', 'error');
+                        alert(`导出失败: ${e.message}`);
+                    }
+                }
+
+                _testRandomness() {
+                    try {
+                        const seed = getStrongSeed();
+                        this._log(`已刷新随机种子: ${seed}`);
+                        this._setStatus('已刷新随机种子', 'active');
+                        if (this.specialMode) this.correctRulesApplyCount += 3;
+                    } catch (e) {
+                        this._log(`刷新随机种子失败: ${e.message}`);
+                    }
+                }
+
+                async _loadGuestPageInfo() {
+                    try {
+                        const txt = await this._fetchText(`${this.remoteBaseUrl}/page.txt`, 6000);
+                        let line = null;
+                        for (const l of txt.split(/\r?\n/)) {
+                            const s = l.trim();
+                            if (s) { line = s; break; }
+                        }
+                        if (!line) throw new Error('page.txt 内容为空');
+                        let label, url;
+                        const splitIdx = Math.max(line.lastIndexOf(' '), line.lastIndexOf('\t'));
+                        if (splitIdx > 0) {
+                            label = line.substring(0, splitIdx).trim().replace(/_/g, ' ');
+                            url = line.substring(splitIdx + 1).trim();
+                        } else {
+                            label = '打开页面';
+                            url = line.trim();
+                        }
+                        if (!url.startsWith('http://') && !url.startsWith('https://')) url = 'http://' + url;
+                        this.guestPageUrl = url;
+                        this.guestPageLabel = label;
+                        this.guestPageBtnText.textContent = label;
+                        this.guestPageBtn.disabled = false;
+                        this.guestPageBtn.title = url;
+                    } catch (e) {
+                        this.guestPageUrl = null;
+                        this.guestPageBtnText.textContent = '千万别点';
+                        this.guestPageBtn.disabled = false;
+                    }
+                }
+
+                _openGuestPage() {
+                    if (this.guestPageUrl) {
+                        window.open(this.guestPageUrl, '_blank', 'noopener,noreferrer');
+                    } else {
+                        this.guestPageBtn.disabled = true;
+                        this.guestPageBtnText.textContent = '加载中...';
+                        this._loadGuestPageInfo().then(() => {
+                            if (this.guestPageUrl) window.open(this.guestPageUrl, '_blank', 'noopener,noreferrer');
+                            else alert('无法加载访客页面');
+                        });
+                    }
+                }
+            }
+
+            new SeatAllocatorApp();
+            console.log('iAxiom Placement System v8.5.0 - Web Edition');
+        })();
+    </script>
+</body>
+</html>
