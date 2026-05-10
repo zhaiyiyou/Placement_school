@@ -387,8 +387,9 @@
         }
         .seat-grid-outer {
             display: flex;
-            gap: 16px;
-            align-items: flex-start;
+            flex-direction: column;
+            gap: 8px;
+            align-items: stretch;
         }
         .seat-grid {
             display: grid;
@@ -439,15 +440,13 @@
         }
         .area-labels {
             display: flex;
-            flex-direction: column;
-            justify-content: space-between;
+            flex-direction: row;
             gap: 4px;
             flex-shrink: 0;
             font-size: 0.75rem;
             font-weight: 600;
             color: #fff;
-            min-width: 70px;
-            height: 100%;
+            width: 100%;
         }
         .area-label-tag {
             padding: 8px 10px;
@@ -460,30 +459,27 @@
         }
         .area-label-tag.middle-area {
             background: #4a69bd;
-            height: 192px;
+            flex: 4;
             display: flex;
             align-items: center;
             justify-content: center;
-            writing-mode: vertical-rl;
-            text-orientation: mixed;
+            padding: 6px 10px;
         }
         .area-label-tag.wall-area-top {
             background: #60a3bc;
-            height: 96px;
+            flex: 2;
             display: flex;
             align-items: center;
             justify-content: center;
-            writing-mode: vertical-rl;
-            text-orientation: mixed;
+            padding: 6px 10px;
         }
         .area-label-tag.wall-area-bottom {
             background: #60a3bc;
-            height: 96px;
+            flex: 2;
             display: flex;
             align-items: center;
             justify-content: center;
-            writing-mode: vertical-rl;
-            text-orientation: mixed;
+            padding: 6px 10px;
         }
 
         .log-area {
@@ -683,16 +679,18 @@
                 font-size: 0.68rem;
             }
             .area-labels {
-                min-width: 50px;
+                min-width: auto;
+                width: 100%;
                 font-size: 0.65rem;
             }
             .area-label-tag.middle-area {
-                margin-top: 76px;
-                height: 152px;
+                flex: 4;
+                padding: 4px 8px;
             }
             .area-label-tag.wall-area-top,
             .area-label-tag.wall-area-bottom {
-                height: 76px;
+                flex: 2;
+                padding: 4px 8px;
             }
         }
 
@@ -786,12 +784,12 @@
                     <span class="seat-area-header">📐 座位表预览 (8行 × 7列)</span>
                     <div class="seat-scroll-wrapper">
                         <div class="seat-grid-outer">
-                            <div class="seat-grid" id="seatGrid"></div>
                             <div class="area-labels">
                                 <div class="area-label-tag wall-area-top">靠墙区域</div>
                                 <div class="area-label-tag middle-area">中间区域</div>
                                 <div class="area-label-tag wall-area-bottom">靠墙区域</div>
                             </div>
+                            <div class="seat-grid" id="seatGrid"></div>
                         </div>
                     </div>
                 </div>
