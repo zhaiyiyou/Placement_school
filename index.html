@@ -393,8 +393,8 @@
         }
         .seat-grid {
             display: grid;
-            grid-template-columns: repeat(7, 78px);
-            grid-template-rows: repeat(8, 48px);
+            grid-template-columns: repeat(8, 78px);
+            grid-template-rows: repeat(7, 48px);
             gap: 4px;
             flex-shrink: 0;
         }
@@ -671,8 +671,8 @@
                 order: 10;
             }
             .seat-grid {
-                grid-template-columns: repeat(7, 56px);
-                grid-template-rows: repeat(8, 38px);
+                grid-template-columns: repeat(8, 56px);
+                grid-template-rows: repeat(7, 38px);
                 gap: 3px;
             }
             .seat-cell {
@@ -781,7 +781,7 @@
                 </div>
 
                 <div class="seat-area">
-                    <span class="seat-area-header">📐 座位表预览 (8行 × 7列)</span>
+                    <span class="seat-area-header">📐 座位表预览 (8列 × 7行)</span>
                     <div class="seat-scroll-wrapper">
                         <div class="seat-grid-outer">
                             <div class="area-labels">
@@ -883,8 +883,8 @@
                 constructor() {
                     this.version = "8.5.0";
                     this.ans = [];
-                    for (let r = 0; r < 8; r++) {
-                        this.ans.push(new Array(7).fill(" "));
+                    for (let r = 0; r < 7; r++) {
+                        this.ans.push(new Array(8).fill(" "));
                     }
                     this.students = [];
                     this.rules = [];
@@ -931,11 +931,11 @@
                 _initSeatGrid() {
                     this.seatGrid.innerHTML = '';
                     this.seatCells = [];
-                    for (let r = 0; r < 8; r++) {
+                    for (let r = 0; r < 7; r++) {
                         this.seatCells.push([]);
-                        for (let c = 0; c < 7; c++) {
+                        for (let c = 0; c < 8; c++) {
                             const cell = document.createElement('div');
-                            cell.className = 'seat-cell ' + (r >= 2 && r <= 5 ? 'middle' : 'wall');
+                            cell.className = 'seat-cell ' + (r >= 1 && r <= 4 ? 'middle' : 'wall');
                             cell.textContent = '';
                             cell.title = `行${r+1} 列${c+1}`;
                             this.seatGrid.appendChild(cell);
@@ -1196,8 +1196,8 @@
                 }
 
                 _hasValidSeats() {
-                    for (let r = 0; r < 8; r++) {
-                        for (let c = 0; c < 7; c++) {
+                    for (let r = 0; r < 7; r++) {
+                        for (let c = 0; c < 8; c++) {
                             if (this.ans[r][c] && this.ans[r][c].trim() && this.ans[r][c] !== ' ') return true;
                         }
                     }
@@ -1330,7 +1330,7 @@
                 }
 
                 _randomSeat() {
-                    const rows = 8, cols = 7;
+                    const rows = 7, cols = 8;
                     this.ans = Array.from({length: rows}, () => new Array(cols).fill(' '));
                     const seed = getStrongSeed();
                     const shuffled = [...this.students];
@@ -1350,8 +1350,8 @@
                 }
 
                 _findSeat(name) {
-                    for (let r = 0; r < 8; r++) {
-                        for (let c = 0; c < 7; c++) {
+                    for (let r = 0; r < 7; r++) {
+                        for (let c = 0; c < 8; c++) {
                             if (this.ans[r][c] === name) return { r, c };
                         }
                     }
@@ -1365,7 +1365,7 @@
                         this.correctRulesApplyCount++;
                         //this._log(`special_mode：执行第 ${this.correctRulesApplyCount} 次规则修正`);
                     }
-                    const rows = 8, cols = 7;
+                    const rows = 7, cols = 8;
 
                     for (const rule of this.rules) {
                         if (!rule || (rule.length !== 3 && rule.length !== 4)) continue;
@@ -1475,11 +1475,11 @@
                 }
 
                 _updateSeatDisplay() {
-                    for (let r = 0; r < 8; r++) {
-                        for (let c = 0; c < 7; c++) {
+                    for (let r = 0; r < 7; r++) {
+                        for (let c = 0; c < 8; c++) {
                             const cell = this.seatCells[r][c];
                             cell.textContent = this.ans[r][c] || '';
-                            cell.className = 'seat-cell ' + (r >= 2 && r <= 5 ? 'middle' : 'wall');
+                            cell.className = 'seat-cell ' + (r >= 1 && r <= 4 ? 'middle' : 'wall');
                             cell.title = `行${r+1} 列${c+1}: ${this.ans[r][c] || '(空)'}`;
                         }
                     }
@@ -1495,7 +1495,7 @@
                         content += '='.repeat(50) + '\n\n';
                         for (let r = 0; r < 7; r++) {
                             let rowParts = [];
-                            for (let c = 0; c < 8; c++) rowParts.push(this.ans[c][r] || ' ');
+                            for (let c = 0; c < 8; c++) rowParts.push(this.ans[r][c] || ' ');
                             content += rowParts.join('\t') + '\n';
                         }
 
