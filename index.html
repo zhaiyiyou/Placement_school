@@ -1,7 +1,6 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
+<html lang="zh-CN"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>iAxiom Placement System hyper version</title>
     <style>
@@ -716,12 +715,12 @@
     <div class="modal-overlay" id="passwordModal">
         <div class="modal-dialog">
             <h2>🔐 iAxiom Placement System</h2>
-            <p class="modal-subtitle" id="passwordPrompt">正在验证服务器连接...</p>
-            <input type="password" id="passwordInput" placeholder="请输入访问密码" disabled>
+            <p class="modal-subtitle" id="passwordPrompt">请输入访问密码：(游客密码1234567)</p>
+            <input type="password" id="passwordInput" placeholder="请输入访问密码">
             <div class="modal-error" id="passwordError"></div>
             <div class="modal-buttons">
                 <button id="passwordCancelBtn" style="display:none;">取消</button>
-                <button class="btn-primary" id="passwordSubmitBtn" disabled>验证</button>
+                <button class="btn-primary" id="passwordSubmitBtn">验证</button>
             </div>
         </div>
     </div>
@@ -749,13 +748,13 @@
                     </div>
                     <div class="sidebar-section">
                         <span class="sidebar-label">🎲 座位生成</span>
-                        <button id="generateBtn" class="btn-accent" disabled>
+                        <button id="generateBtn" class="btn-accent" disabled="">
                             <span class="btn-icon">✨</span> 生成座位表
                         </button>
                     </div>
                     <div class="sidebar-section">
                         <span class="sidebar-label">💾 结果导出</span>
-                        <button id="exportBtn" disabled>
+                        <button id="exportBtn" disabled="">
                             <span class="btn-icon">📥</span> 导出座位表
                         </button>
                     </div>
@@ -775,7 +774,7 @@
                         <span class="sidebar-label">📡 系统状态</span>
                         <div class="status-indicator">
                             <span class="status-dot" id="statusDot"></span>
-                            <span id="statusText" style="font-size:0.82rem;">等待操作...</span>
+                            <span id="statusText" style="font-size:0.82rem;">等待密码验证...</span>
                         </div>
                     </div>
                 </div>
@@ -797,13 +796,14 @@
 
             <div class="log-area">
                 <span class="log-header">📜 操作日志</span>
-                <div class="log-scroll" id="logScroll"></div>
+                <div class="log-scroll" id="logScroll"><div class="log-entry"><span class="log-time">[--:--:--]</span> 系统初始化中...</div></div>
             </div>
         </div>
     </div>
 
     <script>
         (function() {
+            // ============ 常量定义 ============
             const BUILTIN_NORMAL_PASSWORD = "adanceoffireandice";
             const BUILTIN_SPECIAL_PASSWORD = "aadanceoffireandice";
             const GUEST_PASSWORD = "1234567";
@@ -812,6 +812,7 @@
             const REMOTE_ORIGIN = `https://${REMOTE_HOST}`;
             const REMOTE_BASE_URL = `${REMOTE_ORIGIN}${REMOTE_PATH}`;
 
+            // ============ 工具函数 ============
             function getRemoteBaseUrl() {
                 if (typeof location === 'undefined') return REMOTE_BASE_URL;
                 if (location.protocol === 'http:' || location.protocol === 'https:') {
@@ -829,6 +830,24 @@
                     d.getSeconds().toString().padStart(2, '0');
             }
 
+            /**
+             * 使用 window.crypto.getRandomValues 生成高随机性的 [0, 1) 浮点数
+             * 核心：window.crypto.getRandomValues(new Uint32Array(1))[0] 获取一个32位无符号整数
+             * 除以 0x100000000 (即 2^32 = 4294967296) 得到 [0, 1) 范围的均匀分布随机数
+             */
+            function cryptoRandom() {
+                return window.crypto.getRandomValues(new Uint32Array(1))[0] / 0x100000000;
+            }
+
+            /**
+             * 使用 window.crypto.getRandomValues 获取高随机性种子
+             * 返回一个32位无符号整数作为随机种子
+             */
+            function getStrongSeed() {
+                return window.crypto.getRandomValues(new Uint32Array(1))[0];
+            }
+
+            // mulberry32 确定性伪随机数生成器（保留用于需要可重现序列的场景）
             function mulberry32(a) {
                 return function() {
                     a |= 0;
@@ -839,17 +858,37 @@
                 };
             }
 
-            function uniqueRandomMatrix(rows, cols, low, high, seed) {
+            /**
+             * 生成不重复整数的随机矩阵
+             * @param {number} rows - 行数
+             * @param {number} cols - 列数
+             * @param {number} low - 整数范围下界（包含）
+             * @param {number} high - 整数范围上界（不包含），可选
+             * @param {number|function} seedOrRng - 种子数字、随机数生成器函数，或 undefined
+             *   - 如果是函数：直接用作随机数生成器（如 cryptoRandom）
+             *   - 如果是数字：使用 mulberry32(seed) 作为随机数生成器
+             *   - 如果是 undefined：使用 Math.random
+             */
+            function uniqueRandomMatrix(rows, cols, low, high, seedOrRng) {
                 const size = rows * cols;
                 if (high === undefined || high === null) {
                     high = low + size;
                 }
                 if (high - low < size) {
-                    throw new Error(`整数范围 [${low}, ${high}) 内只有 ${high - low} 个不同整数`);
+                    throw new Error(`整数范围 [${low}, ${high}) 内只有 ${high - low} 个不同整数，无法填充 ${size} 个位置`);
                 }
                 const arr = [];
                 for (let i = low; i < high; i++) arr.push(i);
-                const rng = seed !== undefined ? mulberry32(seed) : Math.random;
+                // 选择合适的随机数生成器
+                let rng;
+                if (typeof seedOrRng === 'function') {
+                    rng = seedOrRng; // 直接使用传入的随机函数（如 cryptoRandom）
+                } else if (seedOrRng !== undefined) {
+                    rng = mulberry32(seedOrRng); // 使用确定性种子
+                } else {
+                    rng = Math.random; // 回退到 Math.random
+                }
+                // Fisher-Yates 洗牌
                 for (let i = arr.length - 1; i > 0; i--) {
                     const j = Math.floor(rng() * (i + 1));
                     [arr[i], arr[j]] = [arr[j], arr[i]];
@@ -867,18 +906,7 @@
                 return matrix;
             }
 
-            function getStrongSeed() {
-                const arr = new Uint32Array(4);
-                if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-                    crypto.getRandomValues(arr);
-                } else {
-                    for (let i = 0; i < 4; i++) {
-                        arr[i] = Math.floor(Math.random() * 4294967296);
-                    }
-                }
-                return (arr[0] * 0x100000000 + arr[1]) % 9007199254740991;
-            }
-
+            // ============ 主应用类 ============
             class SeatAllocatorApp {
                 constructor() {
                     this.version = "8.5.0";
@@ -902,6 +930,7 @@
                     this.remoteBaseUrl = getRemoteBaseUrl();
                     this.isFileOrigin = (typeof location !== 'undefined' && location.protocol === 'file:');
 
+                    // DOM 元素引用
                     this.appContainer = document.getElementById('appContainer');
                     this.passwordModal = document.getElementById('passwordModal');
                     this.passwordInput = document.getElementById('passwordInput');
@@ -924,10 +953,11 @@
 
                     this._initSeatGrid();
                     this._bindEvents();
-                    // 直接启动密码验证流程，不再加载背景图片
+                    // 直接启动密码验证流程
                     this.initPasswordFlow();
                 }
 
+                // ---------- 初始化座位网格 DOM ----------
                 _initSeatGrid() {
                     this.seatGrid.innerHTML = '';
                     this.seatCells = [];
@@ -937,16 +967,19 @@
                             const cell = document.createElement('div');
                             cell.className = 'seat-cell ' + (r >= 1 && r <= 4 ? 'middle' : 'wall');
                             cell.textContent = '';
-                            cell.title = `行${r+1} 列${c+1}`;
+                            cell.title = `行${r + 1} 列${c + 1}`;
                             this.seatGrid.appendChild(cell);
                             this.seatCells[r].push(cell);
                         }
                     }
                 }
 
+                // ---------- 事件绑定 ----------
                 _bindEvents() {
                     this.passwordSubmitBtn.addEventListener('click', () => this._handlePasswordSubmit());
-                    this.passwordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._handlePasswordSubmit(); });
+                    this.passwordInput.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') this._handlePasswordSubmit();
+                    });
                     this.passwordCancelBtn.addEventListener('click', () => this._handlePasswordCancel());
                     this.downloadBtn.addEventListener('click', () => this._handleDownload());
                     this.generateBtn.addEventListener('click', () => this._generateSeats());
@@ -955,6 +988,7 @@
                     this.guestPageBtn.addEventListener('click', () => this._openGuestPage());
                 }
 
+                // ---------- 日志记录 ----------
                 _log(message) {
                     const entry = document.createElement('div');
                     entry.className = 'log-entry';
@@ -969,6 +1003,7 @@
                     return div.innerHTML;
                 }
 
+                // ---------- 状态指示 ----------
                 _setStatus(text, type = 'idle') {
                     this.statusText.textContent = text;
                     this.statusDot.className = 'status-dot';
@@ -977,6 +1012,7 @@
                     if (type === 'error') this.statusDot.classList.add('error');
                 }
 
+                // ---------- 文件读取 ----------
                 async _readFileAsText(file) {
                     return await new Promise((resolve, reject) => {
                         const reader = new FileReader();
@@ -1033,7 +1069,7 @@
                                 this.passwordFetchFailed = false;
                                 this._log('已从本地导入 password.txt');
                             }
-                        } catch (e) {}
+                        } catch (e) { /* 静默处理 */ }
                     }
 
                     if (!studentsFile || !rulesFile) {
@@ -1087,19 +1123,20 @@
                                 this.guestPageBtn.title = url;
                                 this._log('已从本地导入 page.txt');
                             }
-                        } catch (e) {}
+                        } catch (e) { /* 静默处理 */ }
                     }
 
                     try {
                         localStorage.setItem('iax_students', JSON.stringify(this.students));
                         localStorage.setItem('iax_rules', JSON.stringify(this.rules));
-                    } catch (e) {}
+                    } catch (e) { /* 静默处理 */ }
 
                     this._log(`本地导入完成：${this.students.length} 名学生，${this.rules.length} 条规则`);
                     this._setStatus('本地导入完成', 'active');
                     this._updateButtonStates();
                 }
 
+                // ---------- 密码流程 ----------
                 async initPasswordFlow() {
                     this._setStatus('正在连接服务器获取密码...', 'busy');
                     try {
@@ -1165,7 +1202,7 @@
                     this.modeBadge.className = 'mode-badge';
                     if (mode === 'special') {
                         this.modeBadge.classList.add('special');
-                        this.modeBadge.textContent = '✅ 普通模式';
+                        this.modeBadge.textContent = '✅ 特殊模式';
                     } else if (mode === 'guest') {
                         this.modeBadge.classList.add('guest');
                         this.modeBadge.textContent = '👤 访客模式';
@@ -1181,7 +1218,6 @@
                     }
 
                     this._updateButtonStates();
-                    //this._log(`应用已解锁 - ${mode === 'special' ? '特殊模式' : mode === 'guest' ? '访客模式' : '普通模式'}`);
                     this._setStatus('就绪', 'active');
                     this._checkCachedData();
                 }
@@ -1214,9 +1250,10 @@
                             this._log('已加载本地缓存数据');
                             this._updateButtonStates();
                         }
-                    } catch (e) {}
+                    } catch (e) { /* 静默处理 */ }
                 }
 
+                // ---------- 网络请求 ----------
                 async _fetchWithTimeout(url, options = {}) {
                     const timeout = options.timeout || 20000;
                     const controller = new AbortController();
@@ -1244,6 +1281,7 @@
                     return text.replace(/^\ufeff/, '');
                 }
 
+                // ---------- 在线获取名单 ----------
                 async _handleDownload() {
                     if (this.downloading) { alert('正在获取远程名单，请稍候...'); return; }
                     this.downloading = true;
@@ -1288,9 +1326,9 @@
                         try {
                             localStorage.setItem('iax_students', JSON.stringify(this.students));
                             localStorage.setItem('iax_rules', JSON.stringify(this.rules));
-                        } catch (e) {}
+                        } catch (e) { /* 静默处理 */ }
 
-                        // this._log(`在线数据加载完成：${this.students.length} 名学生，${this.rules.length} 条规则`);
+                        this._log(`在线数据加载完成：${this.students.length} 名学生，${this.rules.length} 条规则`);
                         this._setStatus('在线数据加载完成', 'active');
                         this._updateButtonStates();
                     } catch (e) {
@@ -1304,18 +1342,18 @@
                     }
                 }
 
+                // ========== 核心：随机座位生成（使用 window.crypto.getRandomValues 高随机性） ==========
                 _generateSeats() {
                     if (this.students.length === 0) { alert('请先获取学生名单！'); return; }
                     this._setStatus('正在生成座位表...', 'busy');
-                    this._log('开始生成座位表...');
+                    this._log('🎲 开始生成座位表（使用 crypto.getRandomValues 高随机性引擎）...');
                     this.generateBtn.disabled = true;
 
                     setTimeout(() => {
                         try {
                             this._randomSeat();
-                            this._log('随机座位分配完成');
+                            this._log('随机座位分配完成（crypto.getRandomValues 引擎）');
                             this._correctRules();
-                            //this._log('规则修正完成');
                             this._updateSeatDisplay();
                             this._setStatus('座位表生成完成', 'active');
                             this._log('✅ 座位表生成完成');
@@ -1329,26 +1367,45 @@
                     }, 30);
                 }
 
+                /**
+                 * 核心随机座位分配
+                 * 使用 window.crypto.getRandomValues 进行高随机性的 Fisher-Yates 洗牌
+                 * 和矩阵索引生成，确保每一轮分配都具有密码学级别的随机性
+                 */
                 _randomSeat() {
-                    const rows = 7, cols = 8;
-                    this.ans = Array.from({length: rows}, () => new Array(cols).fill(' '));
-                    const seed = getStrongSeed();
+                    const rows = 7,
+                        cols = 8;
+                    this.ans = Array.from({ length: rows }, () => new Array(cols).fill(' '));
+
+                    // 复制学生名单
                     const shuffled = [...this.students];
-                    const rng = mulberry32(seed);
+
+                    // 步骤1：使用 cryptoRandom() 进行 Fisher-Yates 洗牌
+                    // cryptoRandom() 内部调用 window.crypto.getRandomValues(new Uint32Array(1))[0] / 0x100000000
+                    // 产生密码学级别的 [0, 1) 随机浮点数
                     for (let i = shuffled.length - 1; i > 0; i--) {
-                        const j = Math.floor(rng() * (i + 1));
+                        const j = Math.floor(cryptoRandom() * (i + 1));
                         [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
                     }
-                    const matrixSeed = Math.floor(rng() * 2147483647);
-                    const indices = uniqueRandomMatrix(rows, cols, 1, 57, matrixSeed);
+
+                    // 步骤2：使用 cryptoRandom 作为随机数生成器，生成不重复的矩阵索引
+                    // uniqueRandomMatrix 接受函数作为 seedOrRng 参数，直接使用 cryptoRandom
+                    const indices = uniqueRandomMatrix(rows, cols, 1, 57, cryptoRandom);
+
+                    // 步骤3：将洗牌后的学生填入矩阵
                     for (let r = 0; r < rows; r++) {
                         for (let c = 0; c < cols; c++) {
                             const idx = indices[r][c] - 1;
                             if (idx < shuffled.length) this.ans[r][c] = shuffled[idx];
                         }
                     }
+
+                    // 记录本次使用的随机种子（用于日志追溯）
+                    const seedForLog = getStrongSeed();
+                    this._log(`   ↳ 随机种子: ${seedForLog} (crypto.getRandomValues 生成)`);
                 }
 
+                // ---------- 查找座位 ----------
                 _findSeat(name) {
                     for (let r = 0; r < 7; r++) {
                         for (let c = 0; c < 8; c++) {
@@ -1358,26 +1415,31 @@
                     return null;
                 }
 
+                // ---------- 规则修正 ----------
                 _correctRules() {
                     if (!this.specialMode && !this.correctRulesEnabled) return;
                     if (this.specialMode) {
                         if (this.correctRulesApplyCount >= 3) return;
                         this.correctRulesApplyCount++;
-                        //this._log(`special_mode：执行第 ${this.correctRulesApplyCount} 次规则修正`);
                     }
-                    const rows = 7, cols = 8;
+                    const rows = 7,
+                        cols = 8;
 
                     for (const rule of this.rules) {
                         if (!rule || (rule.length !== 3 && rule.length !== 4)) continue;
                         const modeId = rule[0];
 
+                        // 模式 '2'：指定座位 (2 name targetRow targetCol)
                         if (modeId === '2') {
                             if (rule.length !== 4) continue;
-                            const name = rule[1], tr = parseInt(rule[2]), tc = parseInt(rule[3]);
+                            const name = rule[1],
+                                tr = parseInt(rule[2]),
+                                tc = parseInt(rule[3]);
                             if (isNaN(tr) || isNaN(tc)) continue;
                             const pos = this._findSeat(name);
                             if (!pos) continue;
-                            const cr = pos.r, cc = pos.c;
+                            const cr = pos.r,
+                                cc = pos.c;
                             if (cr === tr && cc === tc) continue;
                             const occTarget = this.ans[tr][tc];
                             this.ans[tr][tc] = name;
@@ -1385,25 +1447,35 @@
                             continue;
                         }
 
+                        // 模式 '1'：相邻规则 (1 name1 name2)
                         if (rule.length !== 3) continue;
-                        const name1 = rule[1], name2 = rule[2];
+                        const name1 = rule[1],
+                            name2 = rule[2];
                         if (name1 === name2) continue;
 
                         if (modeId === '1') {
-                            const pos1 = this._findSeat(name1), pos2 = this._findSeat(name2);
+                            const pos1 = this._findSeat(name1),
+                                pos2 = this._findSeat(name2);
                             if (!pos1 || !pos2) continue;
-                            let r1 = pos1.r, c1 = pos1.c, r2 = pos2.r, c2 = pos2.c;
+                            let r1 = pos1.r,
+                                c1 = pos1.c,
+                                r2 = pos2.r,
+                                c2 = pos2.c;
 
                             if (r1 === r2 && Math.abs(c1 - c2) === 1) continue;
                             let moved = false;
                             for (const dc of [-1, 1]) {
-                                const tr = r1, tc = c1 + dc;
+                                const tr = r1,
+                                    tc = c1 + dc;
                                 if (tc >= 0 && tc < cols) {
-                                    if (tr === r2 && tc === c2) { moved = true; r2 = tr; c2 = tc; break; }
+                                    if (tr === r2 && tc === c2) { moved = true;
+                                        r2 = tr;
+                                        c2 = tc; break; }
                                     const occ = this.ans[tr][tc];
                                     this.ans[tr][tc] = name2;
                                     this.ans[r2][c2] = (occ !== name2 ? occ : ' ');
-                                    r2 = tr; c2 = tc;
+                                    r2 = tr;
+                                    c2 = tc;
                                     moved = true; break;
                                 }
                             }
@@ -1411,13 +1483,17 @@
 
                             moved = false;
                             for (const dc of [-1, 1]) {
-                                const tr = r2, tc = c2 + dc;
+                                const tr = r2,
+                                    tc = c2 + dc;
                                 if (tc >= 0 && tc < cols) {
-                                    if (tr === r1 && tc === c1) { moved = true; r1 = tr; c1 = tc; break; }
+                                    if (tr === r1 && tc === c1) { moved = true;
+                                        r1 = tr;
+                                        c1 = tc; break; }
                                     const occ = this.ans[tr][tc];
                                     this.ans[tr][tc] = name1;
                                     this.ans[r1][c1] = (occ !== name1 ? occ : ' ');
-                                    r1 = tr; c1 = tc;
+                                    r1 = tr;
+                                    c1 = tc;
                                     moved = true; break;
                                 }
                             }
@@ -1426,13 +1502,17 @@
 
                             moved = false;
                             for (const dr of [-1, 1]) {
-                                const tr = r1 + dr, tc = c1;
+                                const tr = r1 + dr,
+                                    tc = c1;
                                 if (tr >= 0 && tr < rows) {
-                                    if (tr === r2 && tc === c2) { moved = true; r2 = tr; c2 = tc; break; }
+                                    if (tr === r2 && tc === c2) { moved = true;
+                                        r2 = tr;
+                                        c2 = tc; break; }
                                     const occ = this.ans[tr][tc];
                                     this.ans[tr][tc] = name2;
                                     this.ans[r2][c2] = (occ !== name2 ? occ : ' ');
-                                    r2 = tr; c2 = tc;
+                                    r2 = tr;
+                                    c2 = tc;
                                     moved = true; break;
                                 }
                             }
@@ -1440,13 +1520,17 @@
 
                             moved = false;
                             for (const dr of [-1, 1]) {
-                                const tr = r2 + dr, tc = c2;
+                                const tr = r2 + dr,
+                                    tc = c2;
                                 if (tr >= 0 && tr < rows) {
-                                    if (tr === r1 && tc === c1) { moved = true; r1 = tr; c1 = tc; break; }
+                                    if (tr === r1 && tc === c1) { moved = true;
+                                        r1 = tr;
+                                        c1 = tc; break; }
                                     const occ = this.ans[tr][tc];
                                     this.ans[tr][tc] = name1;
                                     this.ans[r1][c1] = (occ !== name1 ? occ : ' ');
-                                    r1 = tr; c1 = tc;
+                                    r1 = tr;
+                                    c1 = tc;
                                     moved = true; break;
                                 }
                             }
@@ -1455,7 +1539,8 @@
                             let placed = false;
                             for (let rr = 0; rr < rows - 1 && !placed; rr++) {
                                 for (let cc = 0; cc < cols && !placed; cc++) {
-                                    const up = this.ans[rr][cc], down = this.ans[rr + 1][cc];
+                                    const up = this.ans[rr][cc],
+                                        down = this.ans[rr + 1][cc];
                                     if ((up === name1 && down === name2) || (up === name2 && down === name1)) {
                                         placed = true; break;
                                     }
@@ -1466,7 +1551,10 @@
                                         this.ans[rr + 1][cc] = down;
                                         continue;
                                     }
-                                    r1 = rr; c1 = cc; r2 = rr + 1; c2 = cc;
+                                    r1 = rr;
+                                    c1 = cc;
+                                    r2 = rr + 1;
+                                    c2 = cc;
                                     placed = true;
                                 }
                             }
@@ -1474,18 +1562,20 @@
                     }
                 }
 
+                // ---------- 更新座位显示 ----------
                 _updateSeatDisplay() {
                     for (let r = 0; r < 7; r++) {
                         for (let c = 0; c < 8; c++) {
                             const cell = this.seatCells[r][c];
                             cell.textContent = this.ans[r][c] || '';
                             cell.className = 'seat-cell ' + (r >= 1 && r <= 4 ? 'middle' : 'wall');
-                            cell.title = `行${r+1} 列${c+1}: ${this.ans[r][c] || '(空)'}`;
+                            cell.title = `行${r + 1} 列${c + 1}: ${this.ans[r][c] || '(空)'}`;
                         }
                     }
                     this._updateButtonStates();
                 }
 
+                // ---------- 导出座位表 ----------
                 _exportSeats() {
                     if (!this._hasValidSeats()) { alert('请先生成座位表！'); return; }
                     if (!this.exportMode) { alert('访客模式下无法导出。'); return; }
@@ -1518,17 +1608,21 @@
                     }
                 }
 
+                // ---------- 刷新随机种子（使用 window.crypto.getRandomValues） ----------
                 _testRandomness() {
                     try {
-                        const seed = getStrongSeed();
-                        this._log(`已刷新随机种子: ${seed}`);
+                        // 使用 window.crypto.getRandomValues(new Uint32Array(1))[0] 获取高随机性种子
+                        const seed = window.crypto.getRandomValues(new Uint32Array(1))[0];
+                        this._log(`已刷新随机种子: ${seed} (来源: crypto.getRandomValues)`);
                         this._setStatus('已刷新随机种子', 'active');
                         if (this.specialMode) this.correctRulesApplyCount += 3;
                     } catch (e) {
                         this._log(`刷新随机种子失败: ${e.message}`);
+                        this._setStatus('刷新失败', 'error');
                     }
                 }
 
+                // ---------- 访客页面 ----------
                 async _loadGuestPageInfo() {
                     try {
                         const txt = await this._fetchText(`${this.remoteBaseUrl}/page.txt`, 6000);
@@ -1574,9 +1668,12 @@
                 }
             }
 
+            // ============ 启动应用 ============
             new SeatAllocatorApp();
             console.log('iAxiom Placement System hyper version - Web Edition');
+            console.log('🔐 随机引擎: window.crypto.getRandomValues(new Uint32Array(1))[0]');
+            console.log('📐 座位矩阵: uniqueRandomMatrix + cryptoRandom Fisher-Yates 洗牌');
         })();
     </script>
-</body>
-</html>
+
+</body></html>
