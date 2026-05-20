@@ -438,47 +438,31 @@
             }
         }
         .area-labels {
-            display: flex;
-            flex-direction: row;
+            display: grid;
+            grid-template-columns: repeat(8, 78px);
             gap: 4px;
             flex-shrink: 0;
             font-size: 0.75rem;
             font-weight: 600;
             color: #fff;
-            width: 100%;
         }
-        .area-label-tag {
-            padding: 8px 10px;
+        .col-label {
+            padding: 6px 4px;
             border-radius: var(--radius-sm);
             text-align: center;
             white-space: nowrap;
             letter-spacing: 0.03em;
             font-size: 0.7rem;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
-        .area-label-tag.middle-area {
+        .col-label-a {
+            background: #60a3bc;
+        }
+        .col-label-b {
             background: #4a69bd;
-            flex: 4;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 6px 10px;
-        }
-        .area-label-tag.wall-area-top {
-            background: #60a3bc;
-            flex: 2;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 6px 10px;
-        }
-        .area-label-tag.wall-area-bottom {
-            background: #60a3bc;
-            flex: 2;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 6px 10px;
         }
 
         .log-area {
@@ -678,18 +662,13 @@
                 font-size: 0.68rem;
             }
             .area-labels {
-                min-width: auto;
-                width: 100%;
+                grid-template-columns: repeat(8, 56px);
+                gap: 3px;
                 font-size: 0.65rem;
             }
-            .area-label-tag.middle-area {
-                flex: 4;
-                padding: 4px 8px;
-            }
-            .area-label-tag.wall-area-top,
-            .area-label-tag.wall-area-bottom {
-                flex: 2;
-                padding: 4px 8px;
+            .col-label {
+                padding: 4px 2px;
+                font-size: 0.6rem;
             }
         }
 
@@ -784,9 +763,14 @@
                     <div class="seat-scroll-wrapper">
                         <div class="seat-grid-outer">
                             <div class="area-labels">
-                                <div class="area-label-tag wall-area-top">靠墙区域</div>
-                                <div class="area-label-tag middle-area">中间区域</div>
-                                <div class="area-label-tag wall-area-bottom">靠墙区域</div>
+                                <div class="col-label col-label-a">列1</div>
+                                <div class="col-label col-label-b">列2</div>
+                                <div class="col-label col-label-a">列3</div>
+                                <div class="col-label col-label-b">列4</div>
+                                <div class="col-label col-label-a">列5</div>
+                                <div class="col-label col-label-b">列6</div>
+                                <div class="col-label col-label-a">列7</div>
+                                <div class="col-label col-label-b">列8</div>
                             </div>
                             <div class="seat-grid" id="seatGrid"></div>
                         </div>
