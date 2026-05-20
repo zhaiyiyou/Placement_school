@@ -1541,6 +1541,74 @@
                                 this.ans[r1][c1] = (occupant !== name1 ? occupant : ' ');
                             }
                         }
+
+                        // 模式 '0'：不相邻规则 (0 name1 name2)，曼哈顿距离 ≥ 2
+                        if (modeId === '0') {
+                            const pos1 = this._findSeat(name1),
+                                pos2 = this._findSeat(name2);
+                            if (!pos1 || !pos2) continue;
+                            const r1 = pos1.r,
+                                c1 = pos1.c;
+                            const r2 = pos2.r,
+                                c2 = pos2.c;
+
+                            const dist = Math.abs(r1 - r2) + Math.abs(c1 - c2);
+                            if (dist >= 2) continue;
+
+                            const fixedSeats = new Map();
+                            for (const otherRule of this.rules) {
+                                if (otherRule[0] === '2' && otherRule.length === 4) {
+                                    const n = otherRule[1];
+                                    const fr = parseInt(otherRule[2]);
+                                    const fc = parseInt(otherRule[3]);
+                                    if (!isNaN(fr) && !isNaN(fc)) {
+                                        fixedSeats.set(n, { r: fr, c: fc });
+                                    }
+                                }
+                            }
+
+                            if (fixedSeats.has(name1)) continue;
+
+                            const candidates = [];
+                            for (let r = 0; r < rows; r++) {
+                                for (let c = 0; c < cols; c++) {
+                                    if (r === r2 && c === c2) continue;
+                                    const d = Math.abs(r - r2) + Math.abs(c - c2);
+                                    if (d >= 2) candidates.push({ r, c });
+                                }
+                            }
+
+                            const available = [];
+                            let alreadyValid = false;
+                            for (const cand of candidates) {
+                                const tr = cand.r,
+                                    tc = cand.c;
+                                const occupant = this.ans[tr][tc];
+
+                                if (occupant === name1) {
+                                    alreadyValid = true;
+                                    break;
+                                }
+
+                                let conflict = false;
+                                if (occupant && occupant !== ' ') {
+                                    const fixed = fixedSeats.get(occupant);
+                                    if (fixed && fixed.r === tr && fixed.c === tc) {
+                                        conflict = true;
+                                    }
+                                }
+                                if (!conflict) available.push(cand);
+                            }
+
+                            if (!alreadyValid && available.length > 0) {
+                                const pick = available[Math.floor(cryptoRandom() * available.length)];
+                                const tr = pick.r,
+                                    tc = pick.c;
+                                const occupant = this.ans[tr][tc];
+                                this.ans[tr][tc] = name1;
+                                this.ans[r1][c1] = (occupant !== name1 ? occupant : ' ');
+                            }
+                        }
                     }
                 }
 
