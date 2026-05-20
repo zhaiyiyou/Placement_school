@@ -1505,15 +1505,19 @@
                                 }
                             }
 
-                            let placed = false;
+                            // 过滤掉冲突的候选位置，同时检查 name1 是否已在合适位置
+                            const available = [];
+                            let alreadyPlaced = false;
                             for (const cand of candidates) {
                                 const tr = cand.r,
                                     tc = cand.c;
                                 const occupant = this.ans[tr][tc];
 
-                                if (occupant === name1) { placed = true; break; }
+                                if (occupant === name1) {
+                                    alreadyPlaced = true;
+                                    break;
+                                }
 
-                                // 检查冲突：若 occupant 有固定座位且正位于固定位置上，移动他会破坏规则
                                 let conflict = false;
                                 if (occupant && occupant !== ' ') {
                                     const fixed = fixedSeats.get(occupant);
@@ -1521,16 +1525,16 @@
                                         conflict = true;
                                     }
                                 }
-                                if (conflict) continue;
-
-                                this.ans[tr][tc] = name1;
-                                this.ans[r1][c1] = (occupant !== name1 ? occupant : ' ');
-                                placed = true;
-                                break;
+                                if (!conflict) available.push(cand);
                             }
 
-                            if (!placed) {
-                                this._log(`⚠️ 模式1规则(${name1},${name2})无法找到不冲突的合适位置`);
+                            if (!alreadyPlaced && available.length > 0) {
+                                const pick = available[Math.floor(cryptoRandom() * available.length)];
+                                const tr = pick.r,
+                                    tc = pick.c;
+                                const occupant = this.ans[tr][tc];
+                                this.ans[tr][tc] = name1;
+                                this.ans[r1][c1] = (occupant !== name1 ? occupant : ' ');
                             }
                         }
                     }
