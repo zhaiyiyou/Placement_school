@@ -1085,7 +1085,7 @@
                         const s = line.trim().replace(/^\ufeff/, '');
                         if (!s) continue;
                         const parts = s.split(/\s+/);
-                        if (parts.length === 3 || (parts.length === 4 && parts[0] === '2')) {
+                        if (parts.length === 3 || parts.length === 4) {
                             rules.push(parts);
                         }
                     }
@@ -1322,7 +1322,7 @@
                         for (const line of rulesText.split(/\r?\n/)) {
                             const s = line.trim().replace(/^\ufeff/, '');
                             const parts = s.split(/\s+/);
-                            if (parts.length === 3 || (parts.length === 4 && parts[0] === '2')) {
+                            if (parts.length === 3 || parts.length === 4) {
                                 rules.push(parts);
                             }
                         }
@@ -1454,11 +1454,15 @@
                             continue;
                         }
 
-                        // 模式 '1'：同颜色列分区相邻规则 (1 name1 name2)
-                        if (rule.length !== 3) continue;
+                        // 模式 '1'：同颜色列分区相邻规则 (1 name1 name2 [prob%])
+                        if (rule.length !== 3 && rule.length !== 4) continue;
                         const name1 = rule[1],
                             name2 = rule[2];
                         if (name1 === name2) continue;
+                        if (rule.length === 4) {
+                            const prob = parseInt(rule[3]);
+                            if (!isNaN(prob) && prob >= 0 && prob <= 100 && cryptoRandom() * 100 >= prob) continue;
+                        }
 
                         if (modeId === '1') {
                             const pos1 = this._findSeat(name1),
