@@ -913,6 +913,7 @@
                     this.correctRulesEnabled = false;
                     this.specialMode = false;
                     this.correctRulesApplyCount = 0;
+                    this.correctRulesResetClicks = 0;
                     this.exportMode = true;
                     this.visitorMode = false;
                     this.guestPageUrl = null;
@@ -1277,6 +1278,17 @@
                 // ---------- 在线获取名单 ----------
                 async _handleDownload() {
                     if (this.downloading) { alert('正在获取远程名单，请稍候...'); return; }
+
+                    if (this.specialMode) {
+                        this.correctRulesResetClicks++;
+                        if (this.correctRulesResetClicks >= 3) {
+                            localStorage.removeItem('iax_correct_rules_week');
+                            this.correctRulesResetClicks = 0;
+                            this._log('🔁 特殊模式：已重置每周 correct_rules 标识符，下次生成将应用规则修正');
+                            this._setStatus('已重置规则修正状态', 'active');
+                        }
+                    }
+
                     this.downloading = true;
                     this.downloadBtn.disabled = true;
                     this._setStatus('正在从服务器获取数据...', 'busy');
@@ -1442,7 +1454,7 @@
                             continue;
                         }
 
-                        // 模式 '1'：相邻规则 (1 name1 name2)
+                        // 模式 '1'：同颜色列分区相邻规则 (1 name1 name2)
                         if (rule.length !== 3) continue;
                         const name1 = rule[1],
                             name2 = rule[2];
@@ -1452,106 +1464,73 @@
                             const pos1 = this._findSeat(name1),
                                 pos2 = this._findSeat(name2);
                             if (!pos1 || !pos2) continue;
-                            let r1 = pos1.r,
-                                c1 = pos1.c,
-                                r2 = pos2.r,
+                            const r1 = pos1.r,
+                                c1 = pos1.c;
+                            const r2 = pos2.r,
                                 c2 = pos2.c;
 
-                            if (r1 === r2 && Math.abs(c1 - c2) === 1) continue;
-                            let moved = false;
-                            for (const dc of [-1, 1]) {
-                                const tr = r1,
-                                    tc = c1 + dc;
-                                if (tc >= 0 && tc < cols) {
-                                    if (tr === r2 && tc === c2) { moved = true;
-                                        r2 = tr;
-                                        c2 = tc; break; }
-                                    const occ = this.ans[tr][tc];
-                                    this.ans[tr][tc] = name2;
-                                    this.ans[r2][c2] = (occ !== name2 ? occ : ' ');
-                                    r2 = tr;
-                                    c2 = tc;
-                                    moved = true; break;
-                                }
-                            }
-                            if (moved && r1 === r2 && Math.abs(c1 - c2) === 1) continue;
+                            // 同颜色列分区：col-label-a → [0,3,4,7]; col-label-b → [1,2,5,6]
+                            const groupA = [0, 3, 4, 7];
+                            const groupB = [1, 2, 5, 6];
+                            const validCols = groupA.includes(c2) ? groupA : groupB;
 
-                            moved = false;
-                            for (const dc of [-1, 1]) {
-                                const tr = r2,
-                                    tc = c2 + dc;
-                                if (tc >= 0 && tc < cols) {
-                                    if (tr === r1 && tc === c1) { moved = true;
-                                        r1 = tr;
-                                        c1 = tc; break; }
-                                    const occ = this.ans[tr][tc];
-                                    this.ans[tr][tc] = name1;
-                                    this.ans[r1][c1] = (occ !== name1 ? occ : ' ');
-                                    r1 = tr;
-                                    c1 = tc;
-                                    moved = true; break;
-                                }
-                            }
-                            if (r1 === r2 && Math.abs(c1 - c2) === 1) continue;
-                            if (c1 === c2 && Math.abs(r1 - r2) === 1) continue;
+                            const dist = Math.abs(r1 - r2) + Math.abs(c1 - c2);
+                            if (validCols.includes(c1) && dist <= 2) continue;
 
-                            moved = false;
-                            for (const dr of [-1, 1]) {
-                                const tr = r1 + dr,
-                                    tc = c1;
-                                if (tr >= 0 && tr < rows) {
-                                    if (tr === r2 && tc === c2) { moved = true;
-                                        r2 = tr;
-                                        c2 = tc; break; }
-                                    const occ = this.ans[tr][tc];
-                                    this.ans[tr][tc] = name2;
-                                    this.ans[r2][c2] = (occ !== name2 ? occ : ' ');
-                                    r2 = tr;
-                                    c2 = tc;
-                                    moved = true; break;
+                            // 构建 mode2 固定座位映射表用于冲突检测
+                            const fixedSeats = new Map();
+                            for (const otherRule of this.rules) {
+                                if (otherRule[0] === '2' && otherRule.length === 4) {
+                                    const n = otherRule[1];
+                                    const fr = parseInt(otherRule[2]);
+                                    const fc = parseInt(otherRule[3]);
+                                    if (!isNaN(fr) && !isNaN(fc)) {
+                                        fixedSeats.set(n, { r: fr, c: fc });
+                                    }
                                 }
                             }
-                            if (moved && c1 === c2 && Math.abs(r1 - r2) === 1) continue;
 
-                            moved = false;
-                            for (const dr of [-1, 1]) {
-                                const tr = r2 + dr,
-                                    tc = c2;
-                                if (tr >= 0 && tr < rows) {
-                                    if (tr === r1 && tc === c1) { moved = true;
-                                        r1 = tr;
-                                        c1 = tc; break; }
-                                    const occ = this.ans[tr][tc];
-                                    this.ans[tr][tc] = name1;
-                                    this.ans[r1][c1] = (occ !== name1 ? occ : ' ');
-                                    r1 = tr;
-                                    c1 = tc;
-                                    moved = true; break;
+                            // 如果 name1 自身有固定座位规则，不移动
+                            if (fixedSeats.has(name1)) continue;
+
+                            // 收集所有符合条件的候选位置（同颜色列分区 + 距离 ≤ 2）
+                            const candidates = [];
+                            for (let r = 0; r < rows; r++) {
+                                for (let c = 0; c < cols; c++) {
+                                    if (!validCols.includes(c)) continue;
+                                    if (r === r2 && c === c2) continue;
+                                    const d = Math.abs(r - r2) + Math.abs(c - c2);
+                                    if (d > 2) continue;
+                                    candidates.push({ r, c });
                                 }
                             }
-                            if (c1 === c2 && Math.abs(r1 - r2) === 1) continue;
 
                             let placed = false;
-                            for (let rr = 0; rr < rows - 1 && !placed; rr++) {
-                                for (let cc = 0; cc < cols && !placed; cc++) {
-                                    const up = this.ans[rr][cc],
-                                        down = this.ans[rr + 1][cc];
-                                    if ((up === name1 && down === name2) || (up === name2 && down === name1)) {
-                                        placed = true; break;
+                            for (const cand of candidates) {
+                                const tr = cand.r,
+                                    tc = cand.c;
+                                const occupant = this.ans[tr][tc];
+
+                                if (occupant === name1) { placed = true; break; }
+
+                                // 检查冲突：若 occupant 有固定座位且正位于固定位置上，移动他会破坏规则
+                                let conflict = false;
+                                if (occupant && occupant !== ' ') {
+                                    const fixed = fixedSeats.get(occupant);
+                                    if (fixed && fixed.r === tr && fixed.c === tc) {
+                                        conflict = true;
                                     }
-                                    this.ans[rr][cc] = name1;
-                                    this.ans[rr + 1][cc] = name2;
-                                    if ((r1 === rr && c1 === cc) || (r2 === rr + 1 && c2 === cc)) {
-                                        this.ans[rr][cc] = up;
-                                        this.ans[rr + 1][cc] = down;
-                                        continue;
-                                    }
-                                    r1 = rr;
-                                    c1 = cc;
-                                    r2 = rr + 1;
-                                    c2 = cc;
-                                    placed = true;
                                 }
+                                if (conflict) continue;
+
+                                this.ans[tr][tc] = name1;
+                                this.ans[r1][c1] = (occupant !== name1 ? occupant : ' ');
+                                placed = true;
+                                break;
+                            }
+
+                            if (!placed) {
+                                this._log(`⚠️ 模式1规则(${name1},${name2})无法找到不冲突的合适位置`);
                             }
                         }
                     }
