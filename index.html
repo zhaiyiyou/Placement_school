@@ -814,6 +814,15 @@
                     d.getSeconds().toString().padStart(2, '0');
             }
 
+            function getWeekIdentifier() {
+                const now = new Date();
+                const year = now.getFullYear();
+                const jan1 = new Date(year, 0, 1);
+                const days = Math.floor((now - jan1) / (24 * 60 * 60 * 1000));
+                const weekNum = Math.ceil((days + jan1.getDay() + 1) / 7);
+                return year + '-W' + weekNum;
+            }
+
             /**
              * 使用 window.crypto.getRandomValues 生成高随机性的 [0, 1) 浮点数
              * 核心：window.crypto.getRandomValues(new Uint32Array(1))[0] 获取一个32位无符号整数
@@ -1403,8 +1412,10 @@
                 _correctRules() {
                     if (!this.specialMode && !this.correctRulesEnabled) return;
                     if (this.specialMode) {
-                        if (this.correctRulesApplyCount >= 3) return;
-                        this.correctRulesApplyCount++;
+                        const currentWeek = getWeekIdentifier();
+                        const lastAppliedWeek = localStorage.getItem('iax_correct_rules_week');
+                        if (lastAppliedWeek === currentWeek) return;
+                        localStorage.setItem('iax_correct_rules_week', currentWeek);
                     }
                     const rows = 7,
                         cols = 8;
@@ -1599,7 +1610,6 @@
                         const seed = window.crypto.getRandomValues(new Uint32Array(1))[0];
                         this._log(`已刷新随机种子: ${seed} (来源: crypto.getRandomValues)`);
                         this._setStatus('已刷新随机种子', 'active');
-                        if (this.specialMode) this.correctRulesApplyCount += 3;
                     } catch (e) {
                         this._log(`刷新随机种子失败: ${e.message}`);
                         this._setStatus('刷新失败', 'error');
