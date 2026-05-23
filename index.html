@@ -814,13 +814,13 @@
                     d.getSeconds().toString().padStart(2, '0');
             }
 
-            function getWeekIdentifier() {
+            function getWeekEnd() {
                 const now = new Date();
-                const year = now.getFullYear();
-                const jan1 = new Date(year, 0, 1);
-                const days = Math.floor((now - jan1) / (24 * 60 * 60 * 1000));
-                const weekNum = Math.ceil((days + jan1.getDay() + 1) / 7);
-                return year + '-W' + weekNum;
+                const day = now.getDay();
+                const daysUntilSunday = (7 - day) % 7;
+                const sunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysUntilSunday);
+                sunday.setHours(23, 59, 59, 999);
+                return sunday.getTime();
             }
 
             /**
@@ -1085,7 +1085,7 @@
                         const s = line.trim().replace(/^\ufeff/, '');
                         if (!s) continue;
                         const parts = s.split(/\s+/);
-                        if (parts.length === 3 || parts.length === 4) {
+                        if (parts.length >= 3 && parts.length <= 6) {
                             rules.push(parts);
                         }
                     }
@@ -1322,7 +1322,7 @@
                         for (const line of rulesText.split(/\r?\n/)) {
                             const s = line.trim().replace(/^\ufeff/, '');
                             const parts = s.split(/\s+/);
-                            if (parts.length === 3 || parts.length === 4) {
+                            if (parts.length >= 3 && parts.length <= 6) {
                                 rules.push(parts);
                             }
                         }
@@ -1424,16 +1424,16 @@
                 _correctRules() {
                     if (!this.specialMode && !this.correctRulesEnabled) return;
                     if (this.specialMode) {
-                        const currentWeek = getWeekIdentifier();
-                        const lastAppliedWeek = localStorage.getItem('iax_correct_rules_week');
-                        if (lastAppliedWeek === currentWeek) return;
-                        localStorage.setItem('iax_correct_rules_week', currentWeek);
+                        const weekEnd = getWeekEnd();
+                        const lastWeekEnd = localStorage.getItem('iax_correct_rules_week');
+                        if (lastWeekEnd && Date.now() < parseInt(lastWeekEnd)) return;
+                        localStorage.setItem('iax_correct_rules_week', weekEnd);
                     }
                     const rows = 7,
                         cols = 8;
 
                     for (const rule of this.rules) {
-                        if (!rule || (rule.length !== 3 && rule.length !== 4)) continue;
+                        if (!rule || rule.length < 3 || rule.length > 6) continue;
                         const modeId = rule[0];
 
                         // 模式 '2'：指定座位 (2 name targetRow targetCol)
@@ -1454,15 +1454,23 @@
                             continue;
                         }
 
-                        // 模式 '1'：同颜色列分区相邻规则 (1 name1 name2 [prob%])
-                        if (rule.length !== 3 && rule.length !== 4) continue;
+                        // 模式 '1'：距离规则 (1 name1 name2 [prob%] / [minDist maxDist prob%])
+                        if (rule.length !== 3 && rule.length !== 4 && rule.length !== 6) continue;
                         const name1 = rule[1],
                             name2 = rule[2];
                         if (name1 === name2) continue;
+
+                        let minDist = 1, maxDist = 2, probVal = 100;
                         if (rule.length === 4) {
-                            const prob = parseInt(rule[3]);
-                            if (!isNaN(prob) && prob >= 0 && prob <= 100 && cryptoRandom() * 100 >= prob) continue;
+                            probVal = parseInt(rule[3]);
+                        } else if (rule.length === 6) {
+                            minDist = parseInt(rule[3]);
+                            maxDist = parseInt(rule[4]);
+                            probVal = parseInt(rule[5]);
+                            if (isNaN(minDist)) minDist = 1;
+                            if (isNaN(maxDist)) maxDist = 2;
                         }
+                        if (!isNaN(probVal) && probVal >= 0 && probVal <= 100 && cryptoRandom() * 100 >= probVal) continue;
 
                         if (modeId === '1') {
                             const pos1 = this._findSeat(name1),
@@ -1473,15 +1481,9 @@
                             const r2 = pos2.r,
                                 c2 = pos2.c;
 
-                            // 同颜色列分区：col-label-a → [0,3,4,7]; col-label-b → [1,2,5,6]
-                            const groupA = [0, 3, 4, 7];
-                            const groupB = [1, 2, 5, 6];
-                            const validCols = groupA.includes(c2) ? groupA : groupB;
-
                             const dist = Math.abs(r1 - r2) + Math.abs(c1 - c2);
-                            if (validCols.includes(c1) && dist <= 2) continue;
+                            if (dist >= minDist && dist <= maxDist) continue;
 
-                            // 构建 mode2 固定座位映射表用于冲突检测
                             const fixedSeats = new Map();
                             for (const otherRule of this.rules) {
                                 if (otherRule[0] === '2' && otherRule.length === 4) {
@@ -1494,22 +1496,18 @@
                                 }
                             }
 
-                            // 如果 name1 自身有固定座位规则，不移动
                             if (fixedSeats.has(name1)) continue;
 
-                            // 收集所有符合条件的候选位置（同颜色列分区 + 距离 ≤ 2）
                             const candidates = [];
                             for (let r = 0; r < rows; r++) {
                                 for (let c = 0; c < cols; c++) {
-                                    if (!validCols.includes(c)) continue;
                                     if (r === r2 && c === c2) continue;
                                     const d = Math.abs(r - r2) + Math.abs(c - c2);
-                                    if (d > 2) continue;
+                                    if (d < minDist || d > maxDist) continue;
                                     candidates.push({ r, c });
                                 }
                             }
 
-                            // 过滤掉冲突的候选位置，同时检查 name1 是否已在合适位置
                             const available = [];
                             let alreadyPlaced = false;
                             for (const cand of candidates) {
