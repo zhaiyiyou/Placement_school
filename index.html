@@ -1284,8 +1284,6 @@
                         if (this.correctRulesResetClicks >= 3) {
                             localStorage.removeItem('iax_correct_rules_week');
                             this.correctRulesResetClicks = 0;
-                            this._log('🔁 特殊模式：已重置每周 correct_rules 标识符，下次生成将应用规则修正');
-                            this._setStatus('已重置规则修正状态', 'active');
                         }
                     }
 
