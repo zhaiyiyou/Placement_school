@@ -1589,6 +1589,13 @@
                                     if (fixed && fixed.r === tr && fixed.c === tc) {
                                         conflict = true;
                                     }
+                                    // 防止将已被模式'3'或模式'1'/'0'保护的学生交换走
+                                    if (protectedByRule3.has(occupant)) {
+                                        conflict = true;
+                                    }
+                                    if (protectedByDistance.has(occupant)) {
+                                        conflict = true;
+                                    }
                                 }
                                 if (!conflict) available.push(cand);
                             }
@@ -1659,6 +1666,13 @@
                                 if (occupant && occupant !== ' ') {
                                     const fixed = fixedSeats.get(occupant);
                                     if (fixed && fixed.r === tr && fixed.c === tc) {
+                                        conflict = true;
+                                    }
+                                    // 防止将已被模式'3'或模式'1'/'0'保护的学生交换走
+                                    if (protectedByRule3.has(occupant)) {
+                                        conflict = true;
+                                    }
+                                    if (protectedByDistance.has(occupant)) {
                                         conflict = true;
                                     }
                                 }
