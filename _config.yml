@@ -1,7 +1,7 @@
 # ---------------- #
 #   Main Configs   #
 # ---------------- #
-baseurl:
+baseurl: /Placement_school
 url: https://zhaiyiyou.github.io
 date_format: "ordinal"
 title: 我的个人网页
