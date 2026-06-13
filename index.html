@@ -1429,6 +1429,10 @@
                     }
                     const rows = 7,
                         cols = 8;
+                    // 记录已被模式'3'放置到第5-7行的学生，防止后续规则将其挤出
+                    const protectedByRule3 = new Set();
+                    // 记录已被模式'1'或'0'距离规则移动过的学生，防止后续规则将其再次移动
+                    const protectedByDistance = new Set();
 
                     for (const rule of this.rules) {
                         if (!rule || rule.length < 3 || rule.length > 6) continue;
@@ -1449,6 +1453,64 @@
                             const occTarget = this.ans[tr][tc];
                             this.ans[tr][tc] = name;
                             this.ans[cr][cc] = (occTarget !== name ? occTarget : ' ');
+                            continue;
+                        }
+
+                        // 模式 '3'：概率放置到第5-7行 (3 name probability%)
+                        if (modeId === '3') {
+                            if (rule.length !== 3) continue;
+                            const name = rule[1];
+                            const probVal = parseInt(rule[2]);
+                            if (isNaN(probVal) || probVal < 0 || probVal > 100) continue;
+                            // 概率判断
+                            if (cryptoRandom() * 100 >= probVal) continue;
+                            const pos = this._findSeat(name);
+                            if (!pos) continue;
+                            const cr = pos.r,
+                                cc = pos.c;
+                            // 如果已经在第5-7行（0-indexed行4-6），跳过
+                            if (cr >= 4 && cr <= 6) continue;
+                            // 收集固定座位规则（模式'2'），避免冲突
+                            const fixedSeats = new Map();
+                            for (const otherRule of this.rules) {
+                                if (otherRule[0] === '2' && otherRule.length === 4) {
+                                    const n = otherRule[1];
+                                    const fr = parseInt(otherRule[2]);
+                                    const fc = parseInt(otherRule[3]);
+                                    if (!isNaN(fr) && !isNaN(fc)) {
+                                        fixedSeats.set(n, { r: fr, c: fc });
+                                    }
+                                }
+                            }
+                            // 如果该学生有固定座位，跳过
+                            if (fixedSeats.has(name)) continue;
+                            // 在第5-7行（0-indexed行4-6）中查找可用座位
+                            const candidates = [];
+                            for (let r = 4; r <= 6; r++) {
+                                for (let c = 0; c < cols; c++) {
+                                    const occupant = this.ans[r][c];
+                                    if (occupant === name) continue;
+                                    let conflict = false;
+                                    // 跳过已被其他模式'3'规则保护的学生，防止互斥
+                                    if (protectedByRule3.has(occupant)) {
+                                        conflict = true;
+                                    }
+                                    if (occupant && occupant !== ' ') {
+                                        const fixed = fixedSeats.get(occupant);
+                                        if (fixed && fixed.r === r && fixed.c === c) {
+                                            conflict = true;
+                                        }
+                                    }
+                                    if (!conflict) candidates.push({ r, c });
+                                }
+                            }
+                            if (candidates.length > 0) {
+                                const pick = candidates[Math.floor(cryptoRandom() * candidates.length)];
+                                const occupant = this.ans[pick.r][pick.c];
+                                this.ans[pick.r][pick.c] = name;
+                                this.ans[cr][cc] = (occupant !== name ? occupant : ' ');
+                                protectedByRule3.add(name);
+                            }
                             continue;
                         }
 
@@ -1474,6 +1536,9 @@
                             const pos1 = this._findSeat(name1),
                                 pos2 = this._findSeat(name2);
                             if (!pos1 || !pos2) continue;
+                            // 如果 name1 已被模式'3'或模式'1'/'0'保护，跳过
+                            if (protectedByRule3.has(name1)) continue;
+                            if (protectedByDistance.has(name1)) continue;
                             const r1 = pos1.r,
                                 c1 = pos1.c;
                             const r2 = pos2.r,
@@ -1535,6 +1600,7 @@
                                 const occupant = this.ans[tr][tc];
                                 this.ans[tr][tc] = name1;
                                 this.ans[r1][c1] = (occupant !== name1 ? occupant : ' ');
+                                protectedByDistance.add(name1);
                             }
                         }
 
@@ -1543,6 +1609,9 @@
                             const pos1 = this._findSeat(name1),
                                 pos2 = this._findSeat(name2);
                             if (!pos1 || !pos2) continue;
+                            // 如果 name1 已被模式'3'或模式'1'/'0'保护，跳过
+                            if (protectedByRule3.has(name1)) continue;
+                            if (protectedByDistance.has(name1)) continue;
                             const r1 = pos1.r,
                                 c1 = pos1.c;
                             const r2 = pos2.r,
@@ -1603,6 +1672,7 @@
                                 const occupant = this.ans[tr][tc];
                                 this.ans[tr][tc] = name1;
                                 this.ans[r1][c1] = (occupant !== name1 ? occupant : ' ');
+                                protectedByDistance.add(name1);
                             }
                         }
                     }
