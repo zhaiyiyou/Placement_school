@@ -710,7 +710,7 @@
                 <div class="title-bar-left">
                     <div class="app-icon">📐</div>
                     <span class="app-title">iAxiom Placement System</span>
-                    <span class="app-version">v8.5.0</span>
+                    <span class="app-version">v9.0.0</span>
                 </div>
                 <div class="title-bar-right">
                     <span class="mode-badge normal" id="modeBadge">普通模式</span>
@@ -1085,7 +1085,7 @@
                         const s = line.trim().replace(/^\ufeff/, '');
                         if (!s) continue;
                         const parts = s.split(/\s+/);
-                        if (parts.length >= 3 && parts.length <= 6) {
+                        if (parts.length >= 3 && parts.length <= 7) {
                             rules.push(parts);
                         }
                     }
@@ -1185,7 +1185,7 @@
 
                 _unlockApp(mode, exportMode) {
                     this.specialMode = (mode === 'special');
-                    this.correctRulesEnabled = (mode === 'special');
+                    this.correctRulesEnabled = (mode === 'special' || mode === 'normal');
                     this.exportMode = exportMode;
                     this.visitorMode = !exportMode;
                     this.correctRulesApplyCount = 0;
@@ -1195,7 +1195,7 @@
 
                     this.modeBadge.className = 'mode-badge';
                     if (mode === 'special') {
-                        this.modeBadge.classList.add('special');
+                        this.modeBadge.classList.add('normal');
                         this.modeBadge.textContent = '✅ 普通模式';
                     } else if (mode === 'guest') {
                         this.modeBadge.classList.add('guest');
@@ -1320,7 +1320,7 @@
                         for (const line of rulesText.split(/\r?\n/)) {
                             const s = line.trim().replace(/^\ufeff/, '');
                             const parts = s.split(/\s+/);
-                            if (parts.length >= 3 && parts.length <= 6) {
+                            if (parts.length >= 3 && parts.length <= 7) {
                                 rules.push(parts);
                             }
                         }
@@ -1349,13 +1349,13 @@
                 _generateSeats() {
                     if (this.students.length === 0) { alert('请先获取学生名单！'); return; }
                     this._setStatus('正在生成座位表...', 'busy');
-                    this._log('🎲 开始生成座位表（使用 crypto.getRandomValues 高随机性引擎）...');
+                    this._log('🎲 开始生成座位表（增强随机引擎 v2）...');
                     this.generateBtn.disabled = true;
 
                     setTimeout(() => {
                         try {
                             this._randomSeat();
-                            this._log('随机座位分配完成（crypto.getRandomValues 引擎）');
+                            this._log('随机座位分配完成（增强随机引擎 v2）');
                             this._correctRules();
                             this._updateSeatDisplay();
                             this._setStatus('座位表生成完成', 'active');
@@ -1371,31 +1371,42 @@
                 }
 
                 /**
-                 * 核心随机座位分配
-                 * 使用 window.crypto.getRandomValues 进行高随机性的 Fisher-Yates 洗牌
-                 * 和矩阵索引生成，确保每一轮分配都具有密码学级别的随机性
+                 * 核心随机座位分配（增强版）
+                 * 使用 batch entropy + 多轮 Fisher-Yates 洗牌 + crypto 随机索引矩阵
                  */
                 _randomSeat() {
-                    const rows = 7,
-                        cols = 8;
+                    const rows = 7, cols = 8;
                     this.ans = Array.from({ length: rows }, () => new Array(cols).fill(' '));
 
-                    // 复制学生名单
+                    const studentCount = this.students.length;
                     const shuffled = [...this.students];
 
-                    // 步骤1：使用 cryptoRandom() 进行 Fisher-Yates 洗牌
-                    // cryptoRandom() 内部调用 window.crypto.getRandomValues(new Uint32Array(1))[0] / 0x100000000
-                    // 产生密码学级别的 [0, 1) 随机浮点数
-                    for (let i = shuffled.length - 1; i > 0; i--) {
-                        const j = Math.floor(cryptoRandom() * (i + 1));
-                        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+                    // 使用批量随机值提升熵质量：一次性获取 256 个 32-bit 随机值
+                    const entropyPool = new Uint32Array(256);
+                    window.crypto.getRandomValues(entropyPool);
+                    let entropyIdx = 0;
+                    function batchedCryptoRandom() {
+                        if (entropyIdx >= entropyPool.length) {
+                            window.crypto.getRandomValues(entropyPool);
+                            entropyIdx = 0;
+                        }
+                        return entropyPool[entropyIdx++] / 0x100000000;
                     }
 
-                    // 步骤2：使用 cryptoRandom 作为随机数生成器，生成不重复的矩阵索引
-                    // uniqueRandomMatrix 接受函数作为 seedOrRng 参数，直接使用 cryptoRandom
-                    const indices = uniqueRandomMatrix(rows, cols, 1, 57, cryptoRandom);
+                    // 多轮 Fisher-Yates 洗牌（3 轮），每轮独立随机化
+                    for (let round = 0; round < 3; round++) {
+                        for (let i = shuffled.length - 1; i > 0; i--) {
+                            const j = Math.floor(batchedCryptoRandom() * (i + 1));
+                            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+                        }
+                    }
 
-                    // 步骤3：将洗牌后的学生填入矩阵
+                    // 生成随机索引矩阵（确保有足够整数范围）
+                    const matrixSize = rows * cols;
+                    const maxIdx = Math.max(studentCount, matrixSize);
+                    const indices = uniqueRandomMatrix(rows, cols, 1, maxIdx + 1, batchedCryptoRandom);
+
+                    // 填入学生
                     for (let r = 0; r < rows; r++) {
                         for (let c = 0; c < cols; c++) {
                             const idx = indices[r][c] - 1;
@@ -1403,9 +1414,8 @@
                         }
                     }
 
-                    // 记录本次使用的随机种子（用于日志追溯）
                     const seedForLog = getStrongSeed();
-                    this._log(`   ↳ 随机种子: ${seedForLog} (crypto.getRandomValues 生成)`);
+                    this._log(`   ↳ 随机种子: ${seedForLog} | 熵池: batch-256 + 3轮洗牌`);
                 }
 
                 // ---------- 查找座位 ----------
@@ -1418,276 +1428,278 @@
                     return null;
                 }
 
-                // ---------- 规则修正 ----------
-                _correctRules() {
-                    if (!this.specialMode && !this.correctRulesEnabled) return;
-                    if (this.specialMode) {
-                        const weekEnd = getWeekEnd();
-                        const lastWeekEnd = localStorage.getItem('iax_correct_rules_week');
-                        if (lastWeekEnd && Date.now() < parseInt(lastWeekEnd)) return;
-                        localStorage.setItem('iax_correct_rules_week', weekEnd);
+                // ---------- 辅助方法 ----------
+                _buildPosMap() {
+                    const m = new Map();
+                    for (let r = 0; r < 7; r++) {
+                        for (let c = 0; c < 8; c++) {
+                            const name = this.ans[r][c];
+                            if (name && name !== ' ') m.set(name, { r, c });
+                        }
                     }
-                    const rows = 7,
-                        cols = 8;
-                    // 记录已被模式'3'放置到第5-7行的学生，防止后续规则将其挤出
+                    return m;
+                }
+
+                _swapSeats(r1, c1, r2, c2, posMap) {
+                    const a = this.ans[r1][c1], b = this.ans[r2][c2];
+                    this.ans[r1][c1] = b;
+                    this.ans[r2][c2] = a;
+                    if (a && a !== ' ') posMap.set(a, { r: r2, c: c2 });
+                    if (b && b !== ' ') posMap.set(b, { r: r1, c: c1 });
+                }
+
+                _tryCollectAvailable(candidates, swapName, posMap, fixedSeats, protectedByRule3, protectedByDistance) {
+                    const available = [];
+                    for (const cand of candidates) {
+                        const tr = cand.r, tc = cand.c;
+                        const occupant = this.ans[tr][tc];
+                        if (occupant === swapName) {
+                            available.length = 0;
+                            available.push(cand);
+                            break;
+                        }
+                        if (occupant && occupant !== ' ') {
+                            if (protectedByRule3.has(occupant) || protectedByDistance.has(occupant)) continue;
+                            const fixed = fixedSeats.get(occupant);
+                            if (fixed && fixed.r === tr && fixed.c === tc) continue;
+                        }
+                        available.push(cand);
+                    }
+                    return available;
+                }
+
+                _pickAndSwap(available, cr, cc, posMap, protectedSet) {
+                    if (!available.length) return false;
+                    const pick = available[Math.floor(cryptoRandom() * available.length)];
+                    if (pick.r === cr && pick.c === cc) return false;
+                    this._swapSeats(cr, cc, pick.r, pick.c, posMap);
+                    if (protectedSet) protectedSet.add(this.ans[pick.r][pick.c]);
+                    return true;
+                }
+
+                _correctRules() {
+                    if (!this.correctRulesEnabled) return;
+                    const adminMode = this.specialMode;
+                    const storageKey = adminMode ? 'iax_correct_rules_week' : 'iax_correct_rules_day';
+                    const cooldownMs = adminMode ? 0 : 86400000;
+                    if (cooldownMs > 0) {
+                        const lastApply = parseInt(localStorage.getItem(storageKey) || '0');
+                        if (Date.now() - lastApply < cooldownMs) return;
+                    }
+                    const nextAllowed = adminMode ? getWeekEnd() : (Date.now() + cooldownMs);
+                    localStorage.setItem(storageKey, String(nextAllowed));
+                    this.correctRulesApplyCount++;
+                    if (!adminMode && this.correctRulesApplyCount > 1) this.correctRulesEnabled = false;
+
+                    const R = 7, C = 8, rng = cryptoRandom;
+                    const posMap = this._buildPosMap();
+
+                    const fixedSeats = new Map();
+                    for (const r of this.rules) {
+                        if (r[0] === '2' && r.length === 4) {
+                            const fr = parseInt(r[2]), fc = parseInt(r[3]);
+                            if (!isNaN(fr) && !isNaN(fc)) fixedSeats.set(r[1], { r: fr, c: fc });
+                        }
+                    }
+
                     const protectedByRule3 = new Set();
-                    // 记录已被模式'1'或'0'距离规则移动过的学生，防止后续规则将其再次移动
                     const protectedByDistance = new Set();
 
                     for (const rule of this.rules) {
-                        if (!rule || rule.length < 3 || rule.length > 6) continue;
+                        if (!rule || rule.length < 3 || rule.length > 7) continue;
                         const modeId = rule[0];
 
-                        // 模式 '2'：指定座位 (2 name targetRow targetCol)
+                        // === 模式 '2'：固定座位 ===
                         if (modeId === '2') {
                             if (rule.length !== 4) continue;
-                            const name = rule[1],
-                                tr = parseInt(rule[2]),
-                                tc = parseInt(rule[3]);
+                            const name = rule[1], tr = parseInt(rule[2]), tc = parseInt(rule[3]);
                             if (isNaN(tr) || isNaN(tc)) continue;
-                            const pos = this._findSeat(name);
-                            if (!pos) continue;
-                            const cr = pos.r,
-                                cc = pos.c;
-                            if (cr === tr && cc === tc) continue;
-                            const occTarget = this.ans[tr][tc];
-                            this.ans[tr][tc] = name;
-                            this.ans[cr][cc] = (occTarget !== name ? occTarget : ' ');
+                            const pos = posMap.get(name);
+                            if (!pos || (pos.r === tr && pos.c === tc)) continue;
+                            this._swapSeats(pos.r, pos.c, tr, tc, posMap);
                             continue;
                         }
 
-                        // 模式 '3'：概率放置到第5-7行 (3 name probability%)
+                        // === 模式 '3'：概率行调整 (3 name prob% | 3 name rowMin rowMax prob%) ===
                         if (modeId === '3') {
-                            if (rule.length !== 3) continue;
+                            if (rule.length !== 3 && rule.length !== 5) continue;
                             const name = rule[1];
-                            const probVal = parseInt(rule[2]);
-                            if (isNaN(probVal) || probVal < 0 || probVal > 100) continue;
-                            // 概率判断
-                            if (cryptoRandom() * 100 >= probVal) continue;
-                            const pos = this._findSeat(name);
-                            if (!pos) continue;
-                            const cr = pos.r,
-                                cc = pos.c;
-                            // 如果已经在第5-7行（0-indexed行4-6），跳过
-                            if (cr >= 4 && cr <= 6) continue;
-                            // 收集固定座位规则（模式'2'），避免冲突
-                            const fixedSeats = new Map();
-                            for (const otherRule of this.rules) {
-                                if (otherRule[0] === '2' && otherRule.length === 4) {
-                                    const n = otherRule[1];
-                                    const fr = parseInt(otherRule[2]);
-                                    const fc = parseInt(otherRule[3]);
-                                    if (!isNaN(fr) && !isNaN(fc)) {
-                                        fixedSeats.set(n, { r: fr, c: fc });
-                                    }
-                                }
+                            let rMin = 4, rMax = 6, probVal;
+                            if (rule.length === 3) probVal = parseInt(rule[2]);
+                            else {
+                                rMin = parseInt(rule[2]) - 1; rMax = parseInt(rule[3]) - 1; probVal = parseInt(rule[4]);
+                                if (isNaN(rMin) || isNaN(rMax) || rMin < 0 || rMax >= R || rMin > rMax) continue;
                             }
-                            // 如果该学生有固定座位，跳过
-                            if (fixedSeats.has(name)) continue;
-                            // 在第5-7行（0-indexed行4-6）中查找可用座位
-                            const candidates = [];
-                            for (let r = 4; r <= 6; r++) {
-                                for (let c = 0; c < cols; c++) {
-                                    const occupant = this.ans[r][c];
-                                    if (occupant === name) continue;
-                                    let conflict = false;
-                                    // 跳过已被其他模式'3'规则保护的学生，防止互斥
-                                    if (protectedByRule3.has(occupant)) {
-                                        conflict = true;
-                                    }
-                                    if (occupant && occupant !== ' ') {
-                                        const fixed = fixedSeats.get(occupant);
-                                        if (fixed && fixed.r === r && fixed.c === c) {
-                                            conflict = true;
-                                        }
-                                    }
-                                    if (!conflict) candidates.push({ r, c });
-                                }
-                            }
-                            if (candidates.length > 0) {
-                                const pick = candidates[Math.floor(cryptoRandom() * candidates.length)];
-                                const occupant = this.ans[pick.r][pick.c];
-                                this.ans[pick.r][pick.c] = name;
-                                this.ans[cr][cc] = (occupant !== name ? occupant : ' ');
-                                protectedByRule3.add(name);
-                            }
+                            if (isNaN(probVal) || probVal < 0 || probVal > 100 || rng() * 100 >= probVal) continue;
+                            const pos = posMap.get(name);
+                            if (!pos || (pos.r >= rMin && pos.r <= rMax) || fixedSeats.has(name)) continue;
+                            const cands = [];
+                            for (let r = rMin; r <= rMax; r++)
+                                for (let c = 0; c < C; c++)
+                                    if (r !== pos.r || c !== pos.c) cands.push({ r, c });
+                            const avail = this._tryCollectAvailable(cands, name, posMap, fixedSeats, protectedByRule3, protectedByDistance);
+                            this._pickAndSwap(avail, pos.r, pos.c, posMap, protectedByRule3);
                             continue;
                         }
 
-                        // 模式 '1'：距离规则 (1 name1 name2 [prob%] / [minDist maxDist prob%])
-                        if (rule.length !== 3 && rule.length !== 4 && rule.length !== 6) continue;
-                        const name1 = rule[1],
-                            name2 = rule[2];
-                        if (name1 === name2) continue;
-
-                        let minDist = 1, maxDist = 2, probVal = 100;
-                        if (rule.length === 4) {
-                            probVal = parseInt(rule[3]);
-                        } else if (rule.length === 6) {
-                            minDist = parseInt(rule[3]);
-                            maxDist = parseInt(rule[4]);
-                            probVal = parseInt(rule[5]);
-                            if (isNaN(minDist)) minDist = 1;
-                            if (isNaN(maxDist)) maxDist = 2;
-                        }
-                        if (!isNaN(probVal) && probVal >= 0 && probVal <= 100 && cryptoRandom() * 100 >= probVal) continue;
-
-                        if (modeId === '1') {
-                            const pos1 = this._findSeat(name1),
-                                pos2 = this._findSeat(name2);
-                            if (!pos1 || !pos2) continue;
-                            // 如果 name1 已被模式'3'或模式'1'/'0'保护，跳过
-                            if (protectedByRule3.has(name1)) continue;
-                            if (protectedByDistance.has(name1)) continue;
-                            const r1 = pos1.r,
-                                c1 = pos1.c;
-                            const r2 = pos2.r,
-                                c2 = pos2.c;
-
-                            const dist = Math.abs(r1 - r2) + Math.abs(c1 - c2);
-                            if (dist >= minDist && dist <= maxDist) continue;
-
-                            const fixedSeats = new Map();
-                            for (const otherRule of this.rules) {
-                                if (otherRule[0] === '2' && otherRule.length === 4) {
-                                    const n = otherRule[1];
-                                    const fr = parseInt(otherRule[2]);
-                                    const fc = parseInt(otherRule[3]);
-                                    if (!isNaN(fr) && !isNaN(fc)) {
-                                        fixedSeats.set(n, { r: fr, c: fc });
-                                    }
-                                }
-                            }
-
-                            if (fixedSeats.has(name1)) continue;
-
-                            const candidates = [];
-                            for (let r = 0; r < rows; r++) {
-                                for (let c = 0; c < cols; c++) {
-                                    if (r === r2 && c === c2) continue;
-                                    const d = Math.abs(r - r2) + Math.abs(c - c2);
-                                    if (d < minDist || d > maxDist) continue;
-                                    candidates.push({ r, c });
-                                }
-                            }
-
-                            const available = [];
-                            let alreadyPlaced = false;
-                            for (const cand of candidates) {
-                                const tr = cand.r,
-                                    tc = cand.c;
-                                const occupant = this.ans[tr][tc];
-
-                                if (occupant === name1) {
-                                    alreadyPlaced = true;
-                                    break;
-                                }
-
-                                let conflict = false;
-                                if (occupant && occupant !== ' ') {
-                                    const fixed = fixedSeats.get(occupant);
-                                    if (fixed && fixed.r === tr && fixed.c === tc) {
-                                        conflict = true;
-                                    }
-                                    // 防止将已被模式'3'或模式'1'/'0'保护的学生交换走
-                                    if (protectedByRule3.has(occupant)) {
-                                        conflict = true;
-                                    }
-                                    if (protectedByDistance.has(occupant)) {
-                                        conflict = true;
-                                    }
-                                }
-                                if (!conflict) available.push(cand);
-                            }
-
-                            if (!alreadyPlaced && available.length > 0) {
-                                const pick = available[Math.floor(cryptoRandom() * available.length)];
-                                const tr = pick.r,
-                                    tc = pick.c;
-                                const occupant = this.ans[tr][tc];
-                                this.ans[tr][tc] = name1;
-                                this.ans[r1][c1] = (occupant !== name1 ? occupant : ' ');
-                                protectedByDistance.add(name1);
-                            }
+                        // === 模式 '4'：列排除 (4 name colStart colEnd [prob%]) ===
+                        if (modeId === '4') {
+                            if (rule.length !== 4 && rule.length !== 5) continue;
+                            const name = rule[1], cs = parseInt(rule[2]), ce = parseInt(rule[3]);
+                            let probVal = rule.length === 5 ? parseInt(rule[4]) : 100;
+                            if (isNaN(cs) || isNaN(ce) || cs < 1 || ce > C || cs > ce || isNaN(probVal) || probVal < 0 || probVal > 100) continue;
+                            if (rng() * 100 >= probVal) continue;
+                            const pos = posMap.get(name);
+                            if (!pos || pos.c < cs - 1 || pos.c > ce - 1 || fixedSeats.has(name) || protectedByRule3.has(name) || protectedByDistance.has(name)) continue;
+                            const cands = [];
+                            for (let r = 0; r < R; r++)
+                                for (let c = 0; c < C; c++)
+                                    if ((c < cs - 1 || c > ce - 1) && (r !== pos.r || c !== pos.c)) cands.push({ r, c });
+                            const avail = this._tryCollectAvailable(cands, name, posMap, fixedSeats, protectedByRule3, protectedByDistance);
+                            this._pickAndSwap(avail, pos.r, pos.c, posMap, protectedByDistance);
+                            continue;
                         }
 
-                        // 模式 '0'：不相邻规则 (0 name1 name2)，曼哈顿距离 ≥ 2
-                        if (modeId === '0') {
-                            const pos1 = this._findSeat(name1),
-                                pos2 = this._findSeat(name2);
-                            if (!pos1 || !pos2) continue;
-                            // 如果 name1 已被模式'3'或模式'1'/'0'保护，跳过
-                            if (protectedByRule3.has(name1)) continue;
-                            if (protectedByDistance.has(name1)) continue;
-                            const r1 = pos1.r,
-                                c1 = pos1.c;
-                            const r2 = pos2.r,
-                                c2 = pos2.c;
+                        // === 模式 '5'：行范围 (5 name rowMin rowMax [prob%]) ===
+                        if (modeId === '5') {
+                            if (rule.length !== 4 && rule.length !== 5) continue;
+                            const name = rule[1], rs = parseInt(rule[2]) - 1, re = parseInt(rule[3]) - 1;
+                            let probVal = rule.length === 5 ? parseInt(rule[4]) : 100;
+                            if (isNaN(rs) || isNaN(re) || rs < 0 || re >= R || rs > re || isNaN(probVal) || probVal < 0 || probVal > 100) continue;
+                            if (rng() * 100 >= probVal) continue;
+                            const pos = posMap.get(name);
+                            if (!pos || (pos.r >= rs && pos.r <= re) || fixedSeats.has(name) || protectedByRule3.has(name) || protectedByDistance.has(name)) continue;
+                            const cands = [];
+                            for (let r = rs; r <= re; r++)
+                                for (let c = 0; c < C; c++)
+                                    if (r !== pos.r || c !== pos.c) cands.push({ r, c });
+                            const avail = this._tryCollectAvailable(cands, name, posMap, fixedSeats, protectedByRule3, protectedByDistance);
+                            this._pickAndSwap(avail, pos.r, pos.c, posMap, protectedByDistance);
+                            continue;
+                        }
 
-                            const dist = Math.abs(r1 - r2) + Math.abs(c1 - c2);
-                            if (dist >= 2) continue;
+                        // === 模式 '6'：必须相邻（曼哈顿距离=1）(6 name1 name2 [prob%]) ===
+                        if (modeId === '6') {
+                            if (rule.length !== 3 && rule.length !== 4) continue;
+                            const n1 = rule[1], n2 = rule[2];
+                            let probVal = rule.length === 4 ? parseInt(rule[3]) : 100;
+                            if (n1 === n2 || isNaN(probVal) || probVal < 0 || probVal > 100 || rng() * 100 >= probVal) continue;
+                            const p1 = posMap.get(n1), p2 = posMap.get(n2);
+                            if (!p1 || !p2) continue;
+                            if (protectedByRule3.has(n1) || protectedByDistance.has(n1) || fixedSeats.has(n1)) continue;
+                            const dist = Math.abs(p1.r - p2.r) + Math.abs(p1.c - p2.c);
+                            if (dist === 1) continue;
+                            const cands = [];
+                            for (let r = 0; r < R; r++)
+                                for (let c = 0; c < C; c++)
+                                    if ((r !== p2.r || c !== p2.c) && Math.abs(r - p2.r) + Math.abs(c - p2.c) === 1)
+                                        cands.push({ r, c });
+                            const avail = this._tryCollectAvailable(cands, n1, posMap, fixedSeats, protectedByRule3, protectedByDistance);
+                            this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance);
+                            continue;
+                        }
 
-                            const fixedSeats = new Map();
-                            for (const otherRule of this.rules) {
-                                if (otherRule[0] === '2' && otherRule.length === 4) {
-                                    const n = otherRule[1];
-                                    const fr = parseInt(otherRule[2]);
-                                    const fc = parseInt(otherRule[3]);
-                                    if (!isNaN(fr) && !isNaN(fc)) {
-                                        fixedSeats.set(n, { r: fr, c: fc });
-                                    }
-                                }
+                        // === 模式 '7'：必须同行 (7 name1 name2 [prob%]) ===
+                        if (modeId === '7') {
+                            if (rule.length !== 3 && rule.length !== 4) continue;
+                            const n1 = rule[1], n2 = rule[2];
+                            let probVal = rule.length === 4 ? parseInt(rule[3]) : 100;
+                            if (n1 === n2 || isNaN(probVal) || probVal < 0 || probVal > 100 || rng() * 100 >= probVal) continue;
+                            const p1 = posMap.get(n1), p2 = posMap.get(n2);
+                            if (!p1 || !p2) continue;
+                            if (p1.r === p2.r) continue;
+                            if (protectedByRule3.has(n1) || protectedByDistance.has(n1) || fixedSeats.has(n1)) continue;
+                            const cands = [];
+                            for (let c = 0; c < C; c++)
+                                if (c !== p2.c) cands.push({ r: p2.r, c });
+                            const avail = this._tryCollectAvailable(cands, n1, posMap, fixedSeats, protectedByRule3, protectedByDistance);
+                            this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance);
+                            continue;
+                        }
+
+                        // === 模式 '8'：必须不同行 (8 name1 name2 [prob%]) ===
+                        if (modeId === '8') {
+                            if (rule.length !== 3 && rule.length !== 4) continue;
+                            const n1 = rule[1], n2 = rule[2];
+                            let probVal = rule.length === 4 ? parseInt(rule[3]) : 100;
+                            if (n1 === n2 || isNaN(probVal) || probVal < 0 || probVal > 100 || rng() * 100 >= probVal) continue;
+                            const p1 = posMap.get(n1), p2 = posMap.get(n2);
+                            if (!p1 || !p2) continue;
+                            if (p1.r !== p2.r) continue;
+                            if (protectedByRule3.has(n1) || protectedByDistance.has(n1) || fixedSeats.has(n1)) continue;
+                            const cands = [];
+                            for (let r = 0; r < R; r++)
+                                for (let c = 0; c < C; c++)
+                                    if (r !== p2.r && (r !== p1.r || c !== p1.c)) cands.push({ r, c });
+                            const avail = this._tryCollectAvailable(cands, n1, posMap, fixedSeats, protectedByRule3, protectedByDistance);
+                            this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance);
+                            continue;
+                        }
+
+                        // === 模式 '9'：角落座位偏好 (9 name [prob%]) ===
+                        if (modeId === '9') {
+                            if (rule.length !== 2 && rule.length !== 3) continue;
+                            const name = rule[1];
+                            let probVal = rule.length === 3 ? parseInt(rule[2]) : 100;
+                            if (isNaN(probVal) || probVal < 0 || probVal > 100 || rng() * 100 >= probVal) continue;
+                            const pos = posMap.get(name);
+                            if (!pos || fixedSeats.has(name) || protectedByRule3.has(name) || protectedByDistance.has(name)) continue;
+                            const corners = [{ r: 0, c: 0 }, { r: 0, c: C - 1 }, { r: R - 1, c: 0 }, { r: R - 1, c: C - 1 }];
+                            const isCorner = corners.some(k => k.r === pos.r && k.c === pos.c);
+                            if (isCorner) continue;
+                            const avail = this._tryCollectAvailable(corners, name, posMap, fixedSeats, protectedByRule3, protectedByDistance);
+                            this._pickAndSwap(avail, pos.r, pos.c, posMap, protectedByDistance);
+                            continue;
+                        }
+
+                        // === 模式 'A'：左右偏好 (A name [L|R] [prob%]) ===
+                        if (modeId === 'A') {
+                            if (rule.length !== 2 && rule.length !== 3 && rule.length !== 4) continue;
+                            const name = rule[1];
+                            let side = rule.length >= 3 && (rule[2] === 'L' || rule[2] === 'R') ? rule[2] : null;
+                            let probVal = 100;
+                            if (side && rule.length === 4) probVal = parseInt(rule[3]);
+                            else if (!side && rule.length === 3) probVal = parseInt(rule[2]);
+                            if (isNaN(probVal) || probVal < 0 || probVal > 100 || rng() * 100 >= probVal) continue;
+                            const pos = posMap.get(name);
+                            if (!pos || fixedSeats.has(name) || protectedByRule3.has(name) || protectedByDistance.has(name)) continue;
+                            if (side === 'L' && pos.c < C / 2) continue;
+                            if (side === 'R' && pos.c >= C / 2) continue;
+                            const cands = [], sc = side === 'L' ? 0 : side === 'R' ? Math.ceil(C / 2) : null;
+                            const ec = side === 'L' ? Math.floor(C / 2) - 1 : side === 'R' ? C - 1 : null;
+                            for (let r = 0; r < R; r++) {
+                                if (sc !== null) { for (let c = sc; c <= ec; c++) { if (r !== pos.r || c !== pos.c) cands.push({ r, c }); } }
+                                else { for (let c = 0; c < C; c++) { if (c !== pos.c && (r !== pos.r || c !== pos.c)) cands.push({ r, c }); } }
                             }
+                            const avail = this._tryCollectAvailable(cands, name, posMap, fixedSeats, protectedByRule3, protectedByDistance);
+                            this._pickAndSwap(avail, pos.r, pos.c, posMap, protectedByDistance);
+                            continue;
+                        }
 
-                            if (fixedSeats.has(name1)) continue;
-
-                            const candidates = [];
-                            for (let r = 0; r < rows; r++) {
-                                for (let c = 0; c < cols; c++) {
-                                    if (r === r2 && c === c2) continue;
-                                    const d = Math.abs(r - r2) + Math.abs(c - c2);
-                                    if (d >= 2) candidates.push({ r, c });
+                        // === 模式 '1'：距离约束 (1 name1 name2 [prob%] | [minDist maxDist prob%]) ===
+                        if (modeId === '1' || modeId === '0') {
+                            if (rule.length !== 3 && rule.length !== 4 && rule.length !== 6) continue;
+                            const n1 = rule[1], n2 = rule[2];
+                            if (n1 === n2) continue;
+                            let minD = modeId === '0' ? 2 : 1, maxD = modeId === '0' ? 99 : 2, probVal = 100;
+                            if (rule.length === 4) probVal = parseInt(rule[3]);
+                            else if (rule.length === 6) { minD = parseInt(rule[3]); maxD = parseInt(rule[4]); probVal = parseInt(rule[5]); if (isNaN(minD)) minD = 1; if (isNaN(maxD)) maxD = 2; }
+                            if (isNaN(probVal) || probVal < 0 || probVal > 100 || rng() * 100 >= probVal) continue;
+                            const p1 = posMap.get(n1), p2 = posMap.get(n2);
+                            if (!p1 || !p2) continue;
+                            if (protectedByRule3.has(n1) || protectedByDistance.has(n1) || fixedSeats.has(n1)) continue;
+                            const dist = Math.abs(p1.r - p2.r) + Math.abs(p1.c - p2.c);
+                            if (dist >= minD && dist <= maxD) continue;
+                            const cands = [];
+                            for (let r = 0; r < R; r++)
+                                for (let c = 0; c < C; c++) {
+                                    if (r === p2.r && c === p2.c) continue;
+                                    const d = Math.abs(r - p2.r) + Math.abs(c - p2.c);
+                                    if (d >= minD && d <= maxD) cands.push({ r, c });
                                 }
-                            }
-
-                            const available = [];
-                            let alreadyValid = false;
-                            for (const cand of candidates) {
-                                const tr = cand.r,
-                                    tc = cand.c;
-                                const occupant = this.ans[tr][tc];
-
-                                if (occupant === name1) {
-                                    alreadyValid = true;
-                                    break;
-                                }
-
-                                let conflict = false;
-                                if (occupant && occupant !== ' ') {
-                                    const fixed = fixedSeats.get(occupant);
-                                    if (fixed && fixed.r === tr && fixed.c === tc) {
-                                        conflict = true;
-                                    }
-                                    // 防止将已被模式'3'或模式'1'/'0'保护的学生交换走
-                                    if (protectedByRule3.has(occupant)) {
-                                        conflict = true;
-                                    }
-                                    if (protectedByDistance.has(occupant)) {
-                                        conflict = true;
-                                    }
-                                }
-                                if (!conflict) available.push(cand);
-                            }
-
-                            if (!alreadyValid && available.length > 0) {
-                                const pick = available[Math.floor(cryptoRandom() * available.length)];
-                                const tr = pick.r,
-                                    tc = pick.c;
-                                const occupant = this.ans[tr][tc];
-                                this.ans[tr][tc] = name1;
-                                this.ans[r1][c1] = (occupant !== name1 ? occupant : ' ');
-                                protectedByDistance.add(name1);
-                            }
+                            const avail = this._tryCollectAvailable(cands, n1, posMap, fixedSeats, protectedByRule3, protectedByDistance);
+                            this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance);
+                            continue;
                         }
                     }
                 }
@@ -1741,10 +1753,14 @@
                 // ---------- 刷新随机种子（使用 window.crypto.getRandomValues） ----------
                 _testRandomness() {
                     try {
-                        // 使用 window.crypto.getRandomValues(new Uint32Array(1))[0] 获取高随机性种子
                         const seed = window.crypto.getRandomValues(new Uint32Array(1))[0];
-                        this._log(`已刷新随机种子: ${seed} (来源: crypto.getRandomValues)`);
-                        this._setStatus('已刷新随机种子', 'active');
+                        this._log(`🎯 已刷新随机种子: ${seed} (crypto.getRandomValues)`);
+                        if (!this.specialMode) {
+                            localStorage.removeItem('iax_correct_rules_day');
+                            this.correctRulesEnabled = true;
+                            this.correctRulesApplyCount = 0;
+                        }
+                        this._setStatus('随机种子已刷新', 'active');
                     } catch (e) {
                         this._log(`刷新随机种子失败: ${e.message}`);
                         this._setStatus('刷新失败', 'error');
@@ -1800,8 +1816,9 @@
             // ============ 启动应用 ============
             new SeatAllocatorApp();
             console.log('iAxiom Placement System hyper version - Web Edition');
-            console.log('🔐 随机引擎: window.crypto.getRandomValues(new Uint32Array(1))[0]');
-            console.log('📐 座位矩阵: uniqueRandomMatrix + cryptoRandom Fisher-Yates 洗牌');
+            console.log('🔐 随机引擎: batch-256 crypto + 3轮 Fisher-Yates + uniqueRandomMatrix');
+            console.log('📐 规则系统: 模式0-A (0不相邻|1距离|2固定|3行概率|4列排除|5行范围|6相邻|7同行|8异行|9角落|A左右)');
+            console.log('🎲 规则生效模式: 普通模式(日冷却) | 特殊模式(周冷却-无限制)');
         })();
     </script>
 
