@@ -1448,7 +1448,7 @@
                     if (b && b !== ' ') posMap.set(b, { r: r1, c: c1 });
                 }
 
-                _tryCollectAvailable(candidates, swapName, posMap, fixedSeats, protectedByRule3, protectedByDistance) {
+                _tryCollectAvailable(candidates, swapName, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap) {
                     const available = [];
                     for (const cand of candidates) {
                         const tr = cand.r, tc = cand.c;
@@ -1460,6 +1460,7 @@
                         }
                         if (occupant && occupant !== ' ') {
                             if (protectedByRule3.has(occupant) || protectedByDistance.has(occupant)) continue;
+                            if (constraintMap && constraintMap.has(occupant)) continue; // 带约束的同学不能被挤占
                             const fixed = fixedSeats.get(occupant);
                             if (fixed && fixed.r === tr && fixed.c === tc) continue;
                         }
@@ -1505,18 +1506,49 @@
                     const protectedByRule3 = new Set();
                     const protectedByDistance = new Set();
 
+                    // ── 约束叠加 ──
+                    // 同一人被多条移动规则命中时，后执行的规则只能在"仍满足此前已生效约束"的
+                    // 座位中挑选，使多个约束可以同时成立（如：第4~6行 ∩ 左半区、距B=2 ∩ 不邻C）。
+                    // 约束在规则生效（概率命中且人员在场）时登记；无法同时满足时保留旧约束、跳过本条。
+                    const constraintMap = new Map();          // 姓名 -> [约束函数 fn(r,c)=>bool]
+                    const addConstraint = (name, fn) => {
+                        if (!constraintMap.has(name)) constraintMap.set(name, []);
+                        constraintMap.get(name).push(fn);
+                    };
+                    const clearConstraints = (name) => { constraintMap.delete(name); };
+                    const passConstraints = (name, r, c) => {
+                        const arr = constraintMap.get(name);
+                        if (!arr) return true;
+                        return arr.every(fn => fn(r, c));
+                    };
+                    const C_dist = (nb, lo, hi) => (r, c) => {
+                        const pb = posMap.get(nb);
+                        if (!pb) return false;
+                        const d = Math.abs(r - pb.r) + Math.abs(c - pb.c);
+                        return d >= lo && d <= hi;
+                    };
+                    const C_rowBand = (rs, re) => (r, c) => r >= rs && r <= re;
+                    const C_colOutside = (cs, ce) => (r, c) => c < cs || c > ce;
+                    const C_colRange = (sc, ec) => (r, c) => c >= sc && c <= ec;
+                    const C_sameRow = (nb) => (r, c) => { const pb = posMap.get(nb); return !!pb && pb.r === r; };
+                    const C_diffRow = (nb) => (r, c) => { const pb = posMap.get(nb); return !!pb && pb.r !== r; };
+                    const C_corner = () => (r, c) => (r === 0 || r === R - 1) && (c === 0 || c === C - 1);
+
                     for (const rule of this.rules) {
                         if (!rule || rule.length < 3 || rule.length > 7) continue;
                         const modeId = rule[0];
 
-                        // === 模式 '2'：固定座位 ===
+                        // === 模式 '2'：固定座位（无条件，最高优先级；交换后清除双方约束）===
                         if (modeId === '2') {
                             if (rule.length !== 4) continue;
                             const name = rule[1], tr = parseInt(rule[2]), tc = parseInt(rule[3]);
                             if (isNaN(tr) || isNaN(tc)) continue;
                             const pos = posMap.get(name);
                             if (!pos || (pos.r === tr && pos.c === tc)) continue;
+                            const occ = this.ans[tr][tc];
                             this._swapSeats(pos.r, pos.c, tr, tc, posMap);
+                            clearConstraints(name);
+                            if (occ && occ !== ' ') clearConstraints(occ);
                             continue;
                         }
 
@@ -1532,13 +1564,18 @@
                             }
                             if (isNaN(probVal) || probVal < 0 || probVal > 100 || rng() * 100 >= probVal) continue;
                             const pos = posMap.get(name);
-                            if (!pos || (pos.r >= rMin && pos.r <= rMax) || fixedSeats.has(name)) continue;
-                            const cands = [];
-                            for (let r = rMin; r <= rMax; r++)
-                                for (let c = 0; c < C; c++)
-                                    if (r !== pos.r || c !== pos.c) cands.push({ r, c });
-                            const avail = this._tryCollectAvailable(cands, name, posMap, fixedSeats, protectedByRule3, protectedByDistance);
-                            this._pickAndSwap(avail, pos.r, pos.c, posMap, protectedByRule3);
+                            if (!pos || fixedSeats.has(name)) continue;
+                            const satisfied = (pos.r >= rMin && pos.r <= rMax);
+                            if (!satisfied) {
+                                const cands = [];
+                                for (let r = rMin; r <= rMax; r++)
+                                    for (let c = 0; c < C; c++)
+                                        if ((r !== pos.r || c !== pos.c) && passConstraints(name, r, c)) cands.push({ r, c });
+                                const avail = this._tryCollectAvailable(cands, name, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
+                                if (this._pickAndSwap(avail, pos.r, pos.c, posMap, protectedByRule3)) addConstraint(name, C_rowBand(rMin, rMax));
+                            } else {
+                                addConstraint(name, C_rowBand(rMin, rMax));
+                            }
                             continue;
                         }
 
@@ -1550,13 +1587,18 @@
                             if (isNaN(cs) || isNaN(ce) || cs < 1 || ce > C || cs > ce || isNaN(probVal) || probVal < 0 || probVal > 100) continue;
                             if (rng() * 100 >= probVal) continue;
                             const pos = posMap.get(name);
-                            if (!pos || pos.c < cs - 1 || pos.c > ce - 1 || fixedSeats.has(name) || protectedByRule3.has(name) || protectedByDistance.has(name)) continue;
-                            const cands = [];
-                            for (let r = 0; r < R; r++)
-                                for (let c = 0; c < C; c++)
-                                    if ((c < cs - 1 || c > ce - 1) && (r !== pos.r || c !== pos.c)) cands.push({ r, c });
-                            const avail = this._tryCollectAvailable(cands, name, posMap, fixedSeats, protectedByRule3, protectedByDistance);
-                            this._pickAndSwap(avail, pos.r, pos.c, posMap, protectedByDistance);
+                            if (!pos || fixedSeats.has(name)) continue;
+                            const satisfied = (pos.c < cs - 1 || pos.c > ce - 1);
+                            if (!satisfied) {
+                                const cands = [];
+                                for (let r = 0; r < R; r++)
+                                    for (let c = 0; c < C; c++)
+                                        if ((c < cs - 1 || c > ce - 1) && (r !== pos.r || c !== pos.c) && passConstraints(name, r, c)) cands.push({ r, c });
+                                const avail = this._tryCollectAvailable(cands, name, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
+                                if (this._pickAndSwap(avail, pos.r, pos.c, posMap, protectedByDistance)) addConstraint(name, C_colOutside(cs - 1, ce - 1));
+                            } else {
+                                addConstraint(name, C_colOutside(cs - 1, ce - 1));
+                            }
                             continue;
                         }
 
@@ -1568,13 +1610,18 @@
                             if (isNaN(rs) || isNaN(re) || rs < 0 || re >= R || rs > re || isNaN(probVal) || probVal < 0 || probVal > 100) continue;
                             if (rng() * 100 >= probVal) continue;
                             const pos = posMap.get(name);
-                            if (!pos || (pos.r >= rs && pos.r <= re) || fixedSeats.has(name) || protectedByRule3.has(name) || protectedByDistance.has(name)) continue;
-                            const cands = [];
-                            for (let r = rs; r <= re; r++)
-                                for (let c = 0; c < C; c++)
-                                    if (r !== pos.r || c !== pos.c) cands.push({ r, c });
-                            const avail = this._tryCollectAvailable(cands, name, posMap, fixedSeats, protectedByRule3, protectedByDistance);
-                            this._pickAndSwap(avail, pos.r, pos.c, posMap, protectedByDistance);
+                            if (!pos || fixedSeats.has(name)) continue;
+                            const satisfied = (pos.r >= rs && pos.r <= re);
+                            if (!satisfied) {
+                                const cands = [];
+                                for (let r = rs; r <= re; r++)
+                                    for (let c = 0; c < C; c++)
+                                        if ((r !== pos.r || c !== pos.c) && passConstraints(name, r, c)) cands.push({ r, c });
+                                const avail = this._tryCollectAvailable(cands, name, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
+                                if (this._pickAndSwap(avail, pos.r, pos.c, posMap, protectedByDistance)) addConstraint(name, C_rowBand(rs, re));
+                            } else {
+                                addConstraint(name, C_rowBand(rs, re));
+                            }
                             continue;
                         }
 
@@ -1585,17 +1632,19 @@
                             let probVal = rule.length === 4 ? parseInt(rule[3]) : 100;
                             if (n1 === n2 || isNaN(probVal) || probVal < 0 || probVal > 100 || rng() * 100 >= probVal) continue;
                             const p1 = posMap.get(n1), p2 = posMap.get(n2);
-                            if (!p1 || !p2) continue;
-                            if (protectedByRule3.has(n1) || protectedByDistance.has(n1) || fixedSeats.has(n1)) continue;
-                            const dist = Math.abs(p1.r - p2.r) + Math.abs(p1.c - p2.c);
-                            if (dist === 1) continue;
-                            const cands = [];
-                            for (let r = 0; r < R; r++)
-                                for (let c = 0; c < C; c++)
-                                    if ((r !== p2.r || c !== p2.c) && Math.abs(r - p2.r) + Math.abs(c - p2.c) === 1)
-                                        cands.push({ r, c });
-                            const avail = this._tryCollectAvailable(cands, n1, posMap, fixedSeats, protectedByRule3, protectedByDistance);
-                            this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance);
+                            if (!p1 || !p2 || fixedSeats.has(n1)) continue;
+                            const satisfied = (Math.abs(p1.r - p2.r) + Math.abs(p1.c - p2.c) === 1);
+                            if (!satisfied) {
+                                const cands = [];
+                                for (let r = 0; r < R; r++)
+                                    for (let c = 0; c < C; c++)
+                                        if ((r !== p2.r || c !== p2.c) && Math.abs(r - p2.r) + Math.abs(c - p2.c) === 1 && passConstraints(n1, r, c))
+                                            cands.push({ r, c });
+                                const avail = this._tryCollectAvailable(cands, n1, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
+                                if (this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance)) addConstraint(n1, C_dist(n2, 1, 1));
+                            } else {
+                                addConstraint(n1, C_dist(n2, 1, 1));
+                            }
                             continue;
                         }
 
@@ -1606,14 +1655,13 @@
                             let probVal = rule.length === 4 ? parseInt(rule[3]) : 100;
                             if (n1 === n2 || isNaN(probVal) || probVal < 0 || probVal > 100 || rng() * 100 >= probVal) continue;
                             const p1 = posMap.get(n1), p2 = posMap.get(n2);
-                            if (!p1 || !p2) continue;
-                            if (p1.r === p2.r) continue;
-                            if (protectedByRule3.has(n1) || protectedByDistance.has(n1) || fixedSeats.has(n1)) continue;
+                            if (!p1 || !p2 || fixedSeats.has(n1)) continue;
+                            if (p1.r === p2.r) { addConstraint(n1, C_sameRow(n2)); continue; }
                             const cands = [];
                             for (let c = 0; c < C; c++)
-                                if (c !== p2.c) cands.push({ r: p2.r, c });
-                            const avail = this._tryCollectAvailable(cands, n1, posMap, fixedSeats, protectedByRule3, protectedByDistance);
-                            this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance);
+                                if (c !== p2.c && passConstraints(n1, p2.r, c)) cands.push({ r: p2.r, c });
+                            const avail = this._tryCollectAvailable(cands, n1, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
+                            if (this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance)) addConstraint(n1, C_sameRow(n2));
                             continue;
                         }
 
@@ -1624,15 +1672,14 @@
                             let probVal = rule.length === 4 ? parseInt(rule[3]) : 100;
                             if (n1 === n2 || isNaN(probVal) || probVal < 0 || probVal > 100 || rng() * 100 >= probVal) continue;
                             const p1 = posMap.get(n1), p2 = posMap.get(n2);
-                            if (!p1 || !p2) continue;
-                            if (p1.r !== p2.r) continue;
-                            if (protectedByRule3.has(n1) || protectedByDistance.has(n1) || fixedSeats.has(n1)) continue;
+                            if (!p1 || !p2 || fixedSeats.has(n1)) continue;
+                            if (p1.r !== p2.r) { addConstraint(n1, C_diffRow(n2)); continue; }
                             const cands = [];
                             for (let r = 0; r < R; r++)
                                 for (let c = 0; c < C; c++)
-                                    if (r !== p2.r && (r !== p1.r || c !== p1.c)) cands.push({ r, c });
-                            const avail = this._tryCollectAvailable(cands, n1, posMap, fixedSeats, protectedByRule3, protectedByDistance);
-                            this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance);
+                                    if (r !== p2.r && (r !== p1.r || c !== p1.c) && passConstraints(n1, r, c)) cands.push({ r, c });
+                            const avail = this._tryCollectAvailable(cands, n1, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
+                            if (this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance)) addConstraint(n1, C_diffRow(n2));
                             continue;
                         }
 
@@ -1643,12 +1690,12 @@
                             let probVal = rule.length === 3 ? parseInt(rule[2]) : 100;
                             if (isNaN(probVal) || probVal < 0 || probVal > 100 || rng() * 100 >= probVal) continue;
                             const pos = posMap.get(name);
-                            if (!pos || fixedSeats.has(name) || protectedByRule3.has(name) || protectedByDistance.has(name)) continue;
+                            if (!pos || fixedSeats.has(name)) continue;
                             const corners = [{ r: 0, c: 0 }, { r: 0, c: C - 1 }, { r: R - 1, c: 0 }, { r: R - 1, c: C - 1 }];
                             const isCorner = corners.some(k => k.r === pos.r && k.c === pos.c);
-                            if (isCorner) continue;
-                            const avail = this._tryCollectAvailable(corners, name, posMap, fixedSeats, protectedByRule3, protectedByDistance);
-                            this._pickAndSwap(avail, pos.r, pos.c, posMap, protectedByDistance);
+                            if (isCorner) { addConstraint(name, C_corner()); continue; }
+                            const avail = this._tryCollectAvailable(corners, name, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
+                            if (this._pickAndSwap(avail, pos.r, pos.c, posMap, protectedByDistance)) addConstraint(name, C_corner());
                             continue;
                         }
 
@@ -1662,17 +1709,18 @@
                             else if (!side && rule.length === 3) probVal = parseInt(rule[2]);
                             if (isNaN(probVal) || probVal < 0 || probVal > 100 || rng() * 100 >= probVal) continue;
                             const pos = posMap.get(name);
-                            if (!pos || fixedSeats.has(name) || protectedByRule3.has(name) || protectedByDistance.has(name)) continue;
-                            if (side === 'L' && pos.c < C / 2) continue;
-                            if (side === 'R' && pos.c >= C / 2) continue;
-                            const cands = [], sc = side === 'L' ? 0 : side === 'R' ? Math.ceil(C / 2) : null;
+                            if (!pos || fixedSeats.has(name)) continue;
+                            const sc = side === 'L' ? 0 : side === 'R' ? Math.ceil(C / 2) : null;
                             const ec = side === 'L' ? Math.floor(C / 2) - 1 : side === 'R' ? C - 1 : null;
+                            const satisfied = (side === 'L' && pos.c < C / 2) || (side === 'R' && pos.c >= C / 2);
+                            if (satisfied) { if (side) addConstraint(name, C_colRange(sc, ec)); continue; }
+                            const cands = [];
                             for (let r = 0; r < R; r++) {
-                                if (sc !== null) { for (let c = sc; c <= ec; c++) { if (r !== pos.r || c !== pos.c) cands.push({ r, c }); } }
-                                else { for (let c = 0; c < C; c++) { if (c !== pos.c && (r !== pos.r || c !== pos.c)) cands.push({ r, c }); } }
+                                if (sc !== null) { for (let c = sc; c <= ec; c++) { if ((r !== pos.r || c !== pos.c) && passConstraints(name, r, c)) cands.push({ r, c }); } }
+                                else { for (let c = 0; c < C; c++) { if (c !== pos.c && (r !== pos.r || c !== pos.c) && passConstraints(name, r, c)) cands.push({ r, c }); } }
                             }
-                            const avail = this._tryCollectAvailable(cands, name, posMap, fixedSeats, protectedByRule3, protectedByDistance);
-                            this._pickAndSwap(avail, pos.r, pos.c, posMap, protectedByDistance);
+                            const avail = this._tryCollectAvailable(cands, name, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
+                            if (this._pickAndSwap(avail, pos.r, pos.c, posMap, protectedByDistance) && side) addConstraint(name, C_colRange(sc, ec));
                             continue;
                         }
 
@@ -1686,19 +1734,19 @@
                             else if (rule.length === 6) { minD = parseInt(rule[3]); maxD = parseInt(rule[4]); probVal = parseInt(rule[5]); if (isNaN(minD)) minD = 1; if (isNaN(maxD)) maxD = 2; }
                             if (isNaN(probVal) || probVal < 0 || probVal > 100 || rng() * 100 >= probVal) continue;
                             const p1 = posMap.get(n1), p2 = posMap.get(n2);
-                            if (!p1 || !p2) continue;
-                            if (protectedByRule3.has(n1) || protectedByDistance.has(n1) || fixedSeats.has(n1)) continue;
+                            if (!p1 || !p2 || fixedSeats.has(n1)) continue;
                             const dist = Math.abs(p1.r - p2.r) + Math.abs(p1.c - p2.c);
-                            if (dist >= minD && dist <= maxD) continue;
+                            const satisfied = dist >= minD && dist <= maxD;
+                            if (satisfied) { addConstraint(n1, C_dist(n2, minD, maxD)); continue; }
                             const cands = [];
                             for (let r = 0; r < R; r++)
                                 for (let c = 0; c < C; c++) {
                                     if (r === p2.r && c === p2.c) continue;
                                     const d = Math.abs(r - p2.r) + Math.abs(c - p2.c);
-                                    if (d >= minD && d <= maxD) cands.push({ r, c });
+                                    if (d >= minD && d <= maxD && passConstraints(n1, r, c)) cands.push({ r, c });
                                 }
-                            const avail = this._tryCollectAvailable(cands, n1, posMap, fixedSeats, protectedByRule3, protectedByDistance);
-                            this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance);
+                            const avail = this._tryCollectAvailable(cands, n1, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
+                            if (this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance)) addConstraint(n1, C_dist(n2, minD, maxD));
                             continue;
                         }
                     }
@@ -1817,7 +1865,7 @@
             new SeatAllocatorApp();
             console.log('iAxiom Placement System hyper version - Web Edition');
             console.log('🔐 随机引擎: batch-256 crypto + 3轮 Fisher-Yates + uniqueRandomMatrix');
-            console.log('📐 规则系统: 模式0-A (0不相邻|1距离|2固定|3行概率|4列排除|5行范围|6相邻|7同行|8异行|9角落|A左右)');
+            console.log('📐 规则系统: 模式0-A (0不相邻|1距离|2固定|3行概率|4列排除|5行范围|6相邻|7同行|8异行|9角落|A左右) · 同一人多规则=约束叠加');
             console.log('🎲 规则生效模式: 普通模式(日冷却) | 特殊模式(周冷却-无限制)');
         })();
     </script>

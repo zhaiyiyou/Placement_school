@@ -118,6 +118,35 @@ def apply_correct_rules(ans, rules):
     protected_by_rule3 = set()
     protected_by_distance = set()
 
+    # 约束叠加：同一人被多条移动规则命中时，后执行的规则只能在
+    # "仍满足此前已生效约束"的座位中挑选，使多个约束可以同时成立
+    # （如：与A不相邻 + 与B距离2）。约束在规则生效时登记，无法同时满足时保留旧约束。
+    constraints = {}          # name -> [fn(r, c) -> bool]
+
+    def add_constraint(name, fn):
+        constraints.setdefault(name, []).append(fn)
+
+    def clear_constraints(name):
+        constraints.pop(name, None)
+
+    def pass_constraints(name, r, c):
+        for fn in constraints.get(name, ()):
+            if not fn(r, c):
+                return False
+        return True
+
+    def c_dist(name_b, lo, hi):
+        def fn(r, c):
+            pos = _find_seat(ans, name_b)
+            if pos is None:
+                return False
+            d = abs(r - pos[0]) + abs(c - pos[1])
+            return lo <= d <= hi
+        return fn
+
+    def c_row_band(rs, re):
+        return lambda r, c: rs <= r <= re
+
     for rule in rules:
         if len(rule) < 3 or len(rule) > 6:
             continue
@@ -138,6 +167,10 @@ def apply_correct_rules(ans, rules):
             occ = ans[tr][tc]
             ans[tr][tc] = name
             ans[cr][cc] = occ if occ != name else ' '
+            # 固定座位为绝对覆盖：清除固定者与被交换者的约束
+            clear_constraints(name)
+            if occ and occ != ' ':
+                clear_constraints(occ)
             continue
 
         if mode_id == '3':
@@ -154,6 +187,7 @@ def apply_correct_rules(ans, rules):
                 continue
             cr, cc = pos
             if cr >= 4 and cr <= 6:
+                add_constraint(name, c_row_band(4, 6))
                 continue
             fixed_seats = {}
             for other in rules:
@@ -167,11 +201,15 @@ def apply_correct_rules(ans, rules):
             candidates = []
             for r in range(4, 7):
                 for c in range(cols):
+                    if not pass_constraints(name, r, c):
+                        continue
                     occ = ans[r][c]
                     if occ == name:
                         continue
                     conflict = False
                     if occ in protected_by_rule3:
+                        conflict = True
+                    if occ and occ != ' ' and occ in constraints:
                         conflict = True
                     if occ and occ != ' ' and occ in fixed_seats:
                         if fixed_seats[occ] == (r, c):
@@ -185,6 +223,7 @@ def apply_correct_rules(ans, rules):
                 ans[pr][pc] = name
                 ans[cr][cc] = occ if occ != name else ' '
                 protected_by_rule3.add(name)
+                add_constraint(name, c_row_band(4, 6))
             continue
 
         if len(rule) != 3 and len(rule) != 4 and len(rule) != 6:
@@ -210,16 +249,6 @@ def apply_correct_rules(ans, rules):
             pos2 = _find_seat(ans, name2)
             if pos1 is None or pos2 is None:
                 continue
-            if name1 in protected_by_rule3:
-                continue
-            if name1 in protected_by_distance:
-                continue
-            r1, c1 = pos1
-            r2, c2 = pos2
-            dist = abs(r1 - r2) + abs(c1 - c2)
-            if min_dist <= dist <= max_dist:
-                continue
-
             fixed_seats = {}
             for other in rules:
                 if other[0] == '2' and len(other) == 4:
@@ -229,6 +258,12 @@ def apply_correct_rules(ans, rules):
                     fixed_seats[n] = (fr, fc)
             if name1 in fixed_seats:
                 continue
+            r1, c1 = pos1
+            r2, c2 = pos2
+            dist = abs(r1 - r2) + abs(c1 - c2)
+            if min_dist <= dist <= max_dist:
+                add_constraint(name1, c_dist(name2, min_dist, max_dist))
+                continue
 
             candidates = []
             for r in range(rows):
@@ -237,6 +272,8 @@ def apply_correct_rules(ans, rules):
                         continue
                     d = abs(r - r2) + abs(c - c2)
                     if d < min_dist or d > max_dist:
+                        continue
+                    if not pass_constraints(name1, r, c):
                         continue
                     candidates.append((r, c))
 
@@ -255,6 +292,8 @@ def apply_correct_rules(ans, rules):
                         conflict = True
                     if occ in protected_by_distance:
                         conflict = True
+                    if occ in constraints:
+                        conflict = True
                 if not conflict:
                     available.append((tr, tc))
 
@@ -265,22 +304,13 @@ def apply_correct_rules(ans, rules):
                 ans[tr][tc] = name1
                 ans[r1][c1] = occ if occ != name1 else ' '
                 protected_by_distance.add(name1)
+                add_constraint(name1, c_dist(name2, min_dist, max_dist))
 
         elif mode_id == '0':
             pos1 = _find_seat(ans, name1)
             pos2 = _find_seat(ans, name2)
             if pos1 is None or pos2 is None:
                 continue
-            if name1 in protected_by_rule3:
-                continue
-            if name1 in protected_by_distance:
-                continue
-            r1, c1 = pos1
-            r2, c2 = pos2
-            dist = abs(r1 - r2) + abs(c1 - c2)
-            if dist >= 2:
-                continue
-
             fixed_seats = {}
             for other in rules:
                 if other[0] == '2' and len(other) == 4:
@@ -290,6 +320,12 @@ def apply_correct_rules(ans, rules):
                     fixed_seats[n] = (fr, fc)
             if name1 in fixed_seats:
                 continue
+            r1, c1 = pos1
+            r2, c2 = pos2
+            dist = abs(r1 - r2) + abs(c1 - c2)
+            if dist >= 2:
+                add_constraint(name1, c_dist(name2, 2, 99))
+                continue
 
             candidates = []
             for r in range(rows):
@@ -298,6 +334,8 @@ def apply_correct_rules(ans, rules):
                         continue
                     d = abs(r - r2) + abs(c - c2)
                     if d < 2:
+                        continue
+                    if not pass_constraints(name1, r, c):
                         continue
                     candidates.append((r, c))
 
@@ -316,6 +354,8 @@ def apply_correct_rules(ans, rules):
                         conflict = True
                     if occ in protected_by_distance:
                         conflict = True
+                    if occ in constraints:
+                        conflict = True
                 if not conflict:
                     available.append((tr, tc))
 
@@ -326,6 +366,7 @@ def apply_correct_rules(ans, rules):
                 ans[tr][tc] = name1
                 ans[r1][c1] = occ if occ != name1 else ' '
                 protected_by_distance.add(name1)
+                add_constraint(name1, c_dist(name2, 2, 99))
 
 
 def _find_seat(ans, name):
