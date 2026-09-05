@@ -1536,6 +1536,11 @@
                     const C_colRange = (sc, ec) => (r, c) => c >= sc && c <= ec;
                     const C_sameRow = (nb) => (r, c) => { const pb = posMap.get(nb); return !!pb && pb.r === r; };
                     const C_diffRow = (nb) => (r, c) => { const pb = posMap.get(nb); return !!pb && pb.r !== r; };
+                    const C_diag = (nb) => (r, c) => {
+                        const pb = posMap.get(nb);
+                        if (!pb) return false;
+                        return Math.abs(r - pb.r) === 1 && Math.abs(c - pb.c) === 1;
+                    };
                     const C_corner = () => (r, c) => (r === 0 || r === R - 1) && (c === 0 || c === C - 1);
 
                     for (const rule of this.rules) {
@@ -1728,6 +1733,26 @@
                             continue;
                         }
 
+                        // === 模式 'B'：斜角 (B name1 name2 [prob%]) 甲必在乙的斜对角4格之一 ===
+                        if (modeId === 'B') {
+                            if (rule.length !== 3 && rule.length !== 4) continue;
+                            const n1 = rule[1], n2 = rule[2];
+                            let probVal = rule.length === 4 ? parseInt(rule[3]) : 100;
+                            if (n1 === n2 || isNaN(probVal) || probVal < 0 || probVal > 100 || rng() * 100 >= probVal) continue;
+                            const p1 = posMap.get(n1), p2 = posMap.get(n2);
+                            if (!p1 || !p2 || fixedSeats.has(n1)) continue;
+                            const satisfied = (Math.abs(p1.r - p2.r) === 1 && Math.abs(p1.c - p2.c) === 1);
+                            if (satisfied) { addConstraint(n1, C_diag(n2)); continue; }
+                            const cands = [];
+                            for (let rr = Math.max(0, p2.r - 1); rr <= Math.min(R - 1, p2.r + 1); rr++)
+                                for (let cc = Math.max(0, p2.c - 1); cc <= Math.min(C - 1, p2.c + 1); cc++)
+                                    if (Math.abs(rr - p2.r) === 1 && Math.abs(cc - p2.c) === 1 && passConstraints(n1, rr, cc))
+                                        cands.push({ r: rr, c: cc });
+                            const avail = this._tryCollectAvailable(cands, n1, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
+                            if (this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance)) addConstraint(n1, C_diag(n2));
+                            continue;
+                        }
+
                         // === 模式 '1'：距离约束 (1 name1 name2 [prob%] | [minDist maxDist prob%]) ===
                         if (modeId === '1' || modeId === '0') {
                             if (rule.length !== 3 && rule.length !== 4 && rule.length !== 6) continue;
@@ -1869,7 +1894,7 @@
             new SeatAllocatorApp();
             console.log('iAxiom Placement System hyper version - Web Edition');
             console.log('🔐 随机引擎: batch-256 crypto + 3轮 Fisher-Yates + uniqueRandomMatrix');
-            console.log('📐 规则系统: 模式0-A (0不相邻|1距离|2固定|3行概率|4列排除|5行范围|6相邻|7同行|8异行|9角落|A左右) · 同一人多规则=约束叠加');
+            console.log('📐 规则系统: 模式0-B (0不相邻|1距离|2固定|3行概率|4列排除|5行范围|6相邻|7同行|8异行|9角落|A左右|B斜角) · 同一人多规则=约束叠加');
             console.log('🎲 规则生效模式: 普通模式(日冷却) | 特殊模式(周冷却-无限制)');
         })();
     </script>

@@ -147,6 +147,14 @@ def apply_correct_rules(ans, rules):
     def c_row_band(rs, re):
         return lambda r, c: rs <= r <= re
 
+    def c_diag(name_b):
+        def fn(r, c):
+            pos = _find_seat(ans, name_b)
+            if pos is None:
+                return False
+            return abs(r - pos[0]) == 1 and abs(c - pos[1]) == 1
+        return fn
+
     for rule in rules:
         if len(rule) < 3 or len(rule) > 6:
             continue
@@ -224,6 +232,71 @@ def apply_correct_rules(ans, rules):
                 ans[cr][cc] = occ if occ != name else ' '
                 protected_by_rule3.add(name)
                 add_constraint(name, c_row_band(4, 6))
+            continue
+
+        # B: 斜角（甲必在乙的斜对角 4 格之一）
+        if mode_id == 'B':
+            if len(rule) != 3 and len(rule) != 4:
+                continue
+            name1, name2 = rule[1], rule[2]
+            prob_val = int(rule[3]) if len(rule) == 4 else 100
+            if name1 == name2:
+                continue
+            if prob_val < 0 or prob_val > 100:
+                continue
+            if crypto_random() * 100 >= prob_val:
+                continue
+            pos1 = _find_seat(ans, name1)
+            pos2 = _find_seat(ans, name2)
+            if pos1 is None or pos2 is None:
+                continue
+            fixed_seats = {}
+            for other in rules:
+                if other[0] == '2' and len(other) == 4:
+                    n = other[1]
+                    fr = int(other[2])
+                    fc = int(other[3])
+                    fixed_seats[n] = (fr, fc)
+            if name1 in fixed_seats:
+                continue
+            r1, c1 = pos1
+            r2, c2 = pos2
+            if abs(r1 - r2) == 1 and abs(c1 - c2) == 1:
+                add_constraint(name1, c_diag(name2))
+                continue
+            candidates = []
+            for dr in (-1, 1):
+                for dc in (-1, 1):
+                    rr, cc = r2 + dr, c2 + dc
+                    if 0 <= rr < rows and 0 <= cc < cols and pass_constraints(name1, rr, cc):
+                        candidates.append((rr, cc))
+            available = []
+            already_ok = False
+            for tr, tc in candidates:
+                occ = ans[tr][tc]
+                if occ == name1:
+                    already_ok = True
+                    break
+                conflict = False
+                if occ and occ != ' ':
+                    if occ in fixed_seats and fixed_seats[occ] == (tr, tc):
+                        conflict = True
+                    if occ in protected_by_rule3:
+                        conflict = True
+                    if occ in protected_by_distance:
+                        conflict = True
+                    if occ in constraints:
+                        conflict = True
+                if not conflict:
+                    available.append((tr, tc))
+            if not already_ok and available:
+                pick = available[math.floor(crypto_random() * len(available))]
+                tr, tc = pick
+                occ = ans[tr][tc]
+                ans[tr][tc] = name1
+                ans[r1][c1] = occ if occ != name1 else ' '
+                protected_by_distance.add(name1)
+                add_constraint(name1, c_diag(name2))
             continue
 
         if len(rule) != 3 and len(rule) != 4 and len(rule) != 6:
@@ -476,6 +549,8 @@ def generate_html(path, students, rules, sorted_pairs,
                 rules_desc.append(f"距离: {r[1]}-{r[2]} 距{r[3]}-{r[4]}, {r[5]}%")
         elif r[0] == '0':
             rules_desc.append(f"不相邻: {r[1]}-{r[2]}")
+        elif r[0] == 'B':
+            rules_desc.append(f"斜角: {r[1]}-{r[2]}")
 
     # 准备 pair 数据
     all_pairs_data = []
