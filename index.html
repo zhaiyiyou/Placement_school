@@ -913,7 +913,6 @@
                     this.correctRulesEnabled = false;
                     this.specialMode = false;
                     this.correctRulesApplyCount = 0;
-                    this.correctRulesResetClicks = 0;
                     this.exportMode = true;
                     this.visitorMode = false;
                     this.guestPageUrl = null;
@@ -1164,6 +1163,19 @@
                 _handlePasswordSubmit() {
                     const pwd = this.passwordInput.value;
                     if (!pwd) { this.passwordError.textContent = '请输入密码'; return; }
+                    // 在密码框输入 reset：重置规则修正记录（清除普通/特殊模式的冷却记录）
+                    if (pwd.trim().toLowerCase() === 'reset') {
+                        localStorage.removeItem('iax_correct_rules_day');
+                        localStorage.removeItem('iax_correct_rules_week');
+                        this.correctRulesEnabled = true;
+                        this.correctRulesApplyCount = 0;
+                        this.passwordError.style.color = '#2e7d32';
+                        this.passwordError.textContent = '✅ 已重置规则修正记录（普通/特殊冷却已清除），请输入访问密码继续。';
+                        this.passwordInput.value = '';
+                        this.passwordInput.focus();
+                        return;
+                    }
+                    this.passwordError.style.color = '';
                     if (pwd === this.specialPassword) {
                         this._unlockApp('special', true);
                     } else if (pwd === this.normalPassword) {
@@ -1278,14 +1290,6 @@
                 // ---------- 在线获取名单 ----------
                 async _handleDownload() {
                     if (this.downloading) { alert('正在获取远程名单，请稍候...'); return; }
-
-                    if (this.specialMode) {
-                        this.correctRulesResetClicks++;
-                        if (this.correctRulesResetClicks >= 3) {
-                            localStorage.removeItem('iax_correct_rules_week');
-                            this.correctRulesResetClicks = 0;
-                        }
-                    }
 
                     this.downloading = true;
                     this.downloadBtn.disabled = true;
