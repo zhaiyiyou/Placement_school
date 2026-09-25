@@ -155,6 +155,15 @@ def apply_correct_rules(ans, rules):
             return abs(r - pos[0]) == 1 and abs(c - pos[1]) == 1
         return fn
 
+    def c_desk(name_b):
+        # 同桌：同一行，且两列属于同一张课桌（每两列一桌，c ^ 1 是同桌列）
+        def fn(r, c):
+            pos = _find_seat(ans, name_b)
+            if pos is None:
+                return False
+            return r == pos[0] and (c ^ 1) == pos[1]
+        return fn
+
     for rule in rules:
         if len(rule) < 3 or len(rule) > 6:
             continue
@@ -297,6 +306,56 @@ def apply_correct_rules(ans, rules):
                 ans[r1][c1] = occ if occ != name1 else ' '
                 protected_by_distance.add(name1)
                 add_constraint(name1, c_diag(name2))
+            continue
+
+        # 模式 '0'（只写两个名字）：必须同桌
+        # 每两列一张课桌（0 基配对 (0,1)(2,3)(4,5)(6,7)），c ^ 1 为同桌列；优先第一个人坐过去
+        if mode_id == '0' and len(rule) == 3:
+            name1, name2 = rule[1], rule[2]
+            if name1 == name2:
+                continue
+            pos1 = _find_seat(ans, name1)
+            pos2 = _find_seat(ans, name2)
+            if pos1 is None or pos2 is None:
+                continue
+            fixed_seats = {}
+            for other in rules:
+                if other[0] == '2' and len(other) == 4:
+                    n = other[1]
+                    fr = int(other[2])
+                    fc = int(other[3])
+                    fixed_seats[n] = (fr, fc)
+            r1, c1 = pos1
+            r2, c2 = pos2
+            if r1 == r2 and (c1 ^ 1) == c2:
+                add_constraint(name1, c_desk(name2))
+                add_constraint(name2, c_desk(name1))
+                continue
+            if name1 not in fixed_seats:
+                mover, anchor = name1, name2
+            elif name2 not in fixed_seats:
+                mover, anchor = name2, name1
+            else:
+                continue
+            pos_m = _find_seat(ans, mover)
+            pos_a = _find_seat(ans, anchor)
+            mr, mc = pos_m
+            tr, tc = pos_a[0], pos_a[1] ^ 1
+            if not pass_constraints(mover, tr, tc):
+                continue
+            occ = ans[tr][tc]
+            if occ and occ != ' ' and occ != mover:
+                if occ in fixed_seats and fixed_seats[occ] == (tr, tc):
+                    continue
+                if occ in protected_by_rule3 or occ in protected_by_distance or occ in constraints:
+                    continue
+            if tr == mr and tc == mc:
+                continue
+            ans[tr][tc] = mover
+            ans[mr][mc] = occ if occ != mover else ' '
+            protected_by_distance.add(mover)
+            add_constraint(mover, c_desk(anchor))
+            add_constraint(anchor, c_desk(mover))
             continue
 
         if len(rule) != 3 and len(rule) != 4 and len(rule) != 6:
@@ -548,7 +607,10 @@ def generate_html(path, students, rules, sorted_pairs,
             elif len(r) == 6:
                 rules_desc.append(f"距离: {r[1]}-{r[2]} 距{r[3]}-{r[4]}, {r[5]}%")
         elif r[0] == '0':
-            rules_desc.append(f"不相邻: {r[1]}-{r[2]}")
+            if len(r) == 3:
+                rules_desc.append(f"同桌: {r[1]}-{r[2]}")
+            else:
+                rules_desc.append(f"不相邻: {r[1]}-{r[2]}")
         elif r[0] == 'B':
             rules_desc.append(f"斜角: {r[1]}-{r[2]}")
 
