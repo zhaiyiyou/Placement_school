@@ -1409,15 +1409,35 @@
                     }
                 }
 
+                // 规则里的姓名与名单核对（避免"名字写错导致规则被静默跳过"）
+                _warnUnknownRuleNames() {
+                    if (!this.rules.length || !this.students.length) return;
+                    const roster = new Set(this.students);
+                    const singleNameModes = ['2', '3', '4', '5', '9', 'A'];
+                    const unknown = new Set();
+                    for (const rule of this.rules) {
+                        if (!rule || rule.length < 3) continue;
+                        const slots = singleNameModes.indexOf(rule[0]) >= 0 ? [1] : [1, 2];
+                        for (const i of slots) {
+                            const v = rule[i];
+                            if (v && !/^-?\d+$/.test(v) && !roster.has(v)) unknown.add(v);
+                        }
+                    }
+                    if (unknown.size) {
+                        this._log(`⚠️ 规则中的姓名不在名单中，相关规则会被跳过：${[...unknown].join('、')}`);
+                    }
+                }
+
                 // ========== 核心：随机座位生成（使用 window.crypto.getRandomValues 高随机性） ==========
                 _generateSeats() {
                     if (this.students.length === 0) { alert('请先获取学生名单！'); return; }
                     this._setStatus('正在生成座位表...', 'busy');
-                    this._log('🎲 开始生成座位表（增强随机引擎 v2）...');
+                    this._log('🎲 开始生成座位表（增强随机引擎 v3）...');
                     this.generateBtn.disabled = true;
 
                     setTimeout(() => {
                         try {
+                            this._warnUnknownRuleNames();
                             this._randomSeat();
                             this._log('随机座位分配完成（增强随机引擎 v3 + 反重复）');
                             this._correctRules();
@@ -1839,6 +1859,13 @@
                     };
                     const C_corner = () => (r, c) => (r === 0 || r === R - 1) && (c === 0 || c === C - 1);
 
+                    // 双人关系（距离/相邻/同行/异行/斜角）都是对称的：约束同时登记给双方，
+                    // 这样后一条规则移动"另一个人"时也不会破坏前一对关系。
+                    const addPairConstraint = (a, b, makeFn) => {
+                        addConstraint(a, makeFn(b));
+                        addConstraint(b, makeFn(a));
+                    };
+
                     for (const rule of this.rules) {
                         if (!rule || rule.length < 3 || rule.length > 7) continue;
                         const modeId = rule[0];
@@ -1946,9 +1973,9 @@
                                         if ((r !== p2.r || c !== p2.c) && Math.abs(r - p2.r) + Math.abs(c - p2.c) === 1 && passConstraints(n1, r, c))
                                             cands.push({ r, c });
                                 const avail = this._tryCollectAvailable(cands, n1, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
-                                if (this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance)) addConstraint(n1, C_dist(n2, 1, 1));
+                                if (this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance)) addPairConstraint(n1, n2, (x) => C_dist(x, 1, 1));
                             } else {
-                                addConstraint(n1, C_dist(n2, 1, 1));
+                                addPairConstraint(n1, n2, (x) => C_dist(x, 1, 1));
                             }
                             continue;
                         }
@@ -1961,12 +1988,12 @@
                             if (n1 === n2 || isNaN(probVal) || probVal < 0 || probVal > 100 || rng() * 100 >= probVal) continue;
                             const p1 = posMap.get(n1), p2 = posMap.get(n2);
                             if (!p1 || !p2 || fixedSeats.has(n1)) continue;
-                            if (p1.r === p2.r) { addConstraint(n1, C_sameRow(n2)); continue; }
+                            if (p1.r === p2.r) { addPairConstraint(n1, n2, (x) => C_sameRow(x)); continue; }
                             const cands = [];
                             for (let c = 0; c < C; c++)
                                 if (c !== p2.c && passConstraints(n1, p2.r, c)) cands.push({ r: p2.r, c });
                             const avail = this._tryCollectAvailable(cands, n1, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
-                            if (this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance)) addConstraint(n1, C_sameRow(n2));
+                            if (this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance)) addPairConstraint(n1, n2, (x) => C_sameRow(x));
                             continue;
                         }
 
@@ -1978,13 +2005,13 @@
                             if (n1 === n2 || isNaN(probVal) || probVal < 0 || probVal > 100 || rng() * 100 >= probVal) continue;
                             const p1 = posMap.get(n1), p2 = posMap.get(n2);
                             if (!p1 || !p2 || fixedSeats.has(n1)) continue;
-                            if (p1.r !== p2.r) { addConstraint(n1, C_diffRow(n2)); continue; }
+                            if (p1.r !== p2.r) { addPairConstraint(n1, n2, (x) => C_diffRow(x)); continue; }
                             const cands = [];
                             for (let r = 0; r < R; r++)
                                 for (let c = 0; c < C; c++)
                                     if (r !== p2.r && (r !== p1.r || c !== p1.c) && passConstraints(n1, r, c)) cands.push({ r, c });
                             const avail = this._tryCollectAvailable(cands, n1, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
-                            if (this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance)) addConstraint(n1, C_diffRow(n2));
+                            if (this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance)) addPairConstraint(n1, n2, (x) => C_diffRow(x));
                             continue;
                         }
 
@@ -2038,14 +2065,14 @@
                             const p1 = posMap.get(n1), p2 = posMap.get(n2);
                             if (!p1 || !p2 || fixedSeats.has(n1)) continue;
                             const satisfied = (Math.abs(p1.r - p2.r) === 1 && Math.abs(p1.c - p2.c) === 1);
-                            if (satisfied) { addConstraint(n1, C_diag(n2)); continue; }
+                            if (satisfied) { addPairConstraint(n1, n2, (x) => C_diag(x)); continue; }
                             const cands = [];
                             for (let rr = Math.max(0, p2.r - 1); rr <= Math.min(R - 1, p2.r + 1); rr++)
                                 for (let cc = Math.max(0, p2.c - 1); cc <= Math.min(C - 1, p2.c + 1); cc++)
                                     if (Math.abs(rr - p2.r) === 1 && Math.abs(cc - p2.c) === 1 && passConstraints(n1, rr, cc))
                                         cands.push({ r: rr, c: cc });
                             const avail = this._tryCollectAvailable(cands, n1, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
-                            if (this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance)) addConstraint(n1, C_diag(n2));
+                            if (this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance)) addPairConstraint(n1, n2, (x) => C_diag(x));
                             continue;
                         }
 
@@ -2062,7 +2089,7 @@
                             if (!p1 || !p2 || fixedSeats.has(n1)) continue;
                             const dist = Math.abs(p1.r - p2.r) + Math.abs(p1.c - p2.c);
                             const satisfied = dist >= minD && dist <= maxD;
-                            if (satisfied) { addConstraint(n1, C_dist(n2, minD, maxD)); continue; }
+                            if (satisfied) { addPairConstraint(n1, n2, (x) => C_dist(x, minD, maxD)); continue; }
                             const cands = [];
                             for (let r = 0; r < R; r++)
                                 for (let c = 0; c < C; c++) {
@@ -2071,7 +2098,7 @@
                                     if (d >= minD && d <= maxD && passConstraints(n1, r, c)) cands.push({ r, c });
                                 }
                             const avail = this._tryCollectAvailable(cands, n1, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
-                            if (this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance)) addConstraint(n1, C_dist(n2, minD, maxD));
+                            if (this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance)) addPairConstraint(n1, n2, (x) => C_dist(x, minD, maxD));
                             continue;
                         }
                     }
