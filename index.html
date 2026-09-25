@@ -869,7 +869,7 @@
                 <div class="title-bar-left">
                     <div class="app-icon">📐</div>
                     <span class="app-title">iAxiom Placement System</span>
-                    <span class="app-version">v9.3.0</span>
+                    <span class="app-version">v9.4.0</span>
                 </div>
                 <div class="title-bar-right">
                     <span class="mode-badge normal" id="modeBadge">普通模式</span>
@@ -1611,6 +1611,34 @@
                     if (unknown.size) {
                         this._log(`⚠️ 规则中的姓名不在名单中，相关规则会被跳过：${[...unknown].join('、')}`);
                     }
+                    const badFormat = this._checkRuleFormats();
+                    if (badFormat.length) {
+                        this._log(`⚠️ 有 ${badFormat.length} 条规则格式无法识别（已跳过，请核对字段个数）：${badFormat.join(' / ')}`);
+                    }
+                }
+
+                /**
+                 * 规则格式自检：字段个数/参数类型不符合该模式要求的规则会被引擎跳过，
+                 * 这里把它们找出来提示，避免"写了规则却没生效"。
+                 * @returns {string[]} 格式有问题的规则原文
+                 */
+                _checkRuleFormats() {
+                    const num = (v) => v !== undefined && v !== '' && !isNaN(parseInt(v));
+                    const pair = (n, withProb) => (n === 3) || (n === 4 && num(withProb));
+                    const bad = [];
+                    for (const rule of this.rules) {
+                        const n = rule.length, m = rule[0];
+                        let ok = false;
+                        if (m === '2') ok = n === 4 && num(rule[2]) && num(rule[3]);
+                        else if (m === '3') ok = (n === 3 && num(rule[2])) || (n === 5 && num(rule[2]) && num(rule[3]) && num(rule[4]));
+                        else if (m === '4' || m === '5') ok = (n === 4 && num(rule[2]) && num(rule[3])) || (n === 5 && num(rule[2]) && num(rule[3]) && num(rule[4]));
+                        else if (m === '6' || m === '7' || m === '8' || m === 'B') ok = pair(n, rule[3]);
+                        else if (m === '9') ok = n === 3 && num(rule[2]);
+                        else if (m === 'A') ok = (n === 3) || (n === 4);
+                        else if (m === '0' || m === '1') ok = n === 3 || (n === 4 && num(rule[3])) || (n === 5 && num(rule[3]) && num(rule[4])) || (n === 6 && num(rule[3]) && num(rule[4]) && num(rule[5]));
+                        if (!ok) bad.push(rule.join(' '));
+                    }
+                    return bad;
                 }
 
                 // ========== 核心：随机座位生成（使用 window.crypto.getRandomValues 高随机性） ==========
@@ -1997,18 +2025,19 @@
                         else if ((mode === '1' || mode === '0') && rule.length === 6) prob = parseInt(rule[5]);
                         else if (mode === '2' || (mode === '3' && rule.length === 3)) prob = 100;
                         if (!isNaN(prob) && prob < 100) continue;
-
                         let ok = true;
                         if (mode === '2') {
                             const tr = parseInt(rule[2]), tc = parseInt(rule[3]);
                             ok = !!a && a.r === tr && a.c === tc;
-                        } else if (mode === '0' && rule.length === 3) {
+                        } else if ((mode === '0' || mode === '1') && rule.length === 3) {
                             ok = !!a && !!b && isDesk(a, b);                       // 必须同桌
                         } else if (mode === '0' || mode === '1') {
                             if (!a || !b) { ok = false; }
                             else {
                                 let lo = mode === '0' ? 2 : 1, hi = mode === '0' ? 99 : 2;
-                                if (rule.length === 6) {
+                                if (rule.length === 5) {
+                                    lo = parseInt(rule[3]); hi = parseInt(rule[4]);
+                                } else if (rule.length === 6) {
                                     lo = parseInt(rule[3]); hi = parseInt(rule[4]);
                                     if (isNaN(lo)) lo = 1;
                                     if (isNaN(hi)) hi = 2;
@@ -2065,6 +2094,17 @@
                         }
                     }
                     return m;
+                }
+
+                // 把某学生移到目标座位（与占位者交换；目标为空则直接坐下）
+                _moveSeat(name, target, posMap) {
+                    const p = posMap.get(name);
+                    if (!p || (p.r === target.r && p.c === target.c)) return;
+                    const occ = this.ans[target.r][target.c];
+                    this.ans[target.r][target.c] = name;
+                    this.ans[p.r][p.c] = (occ && occ !== ' ') ? occ : ' ';
+                    posMap.set(name, { r: target.r, c: target.c });
+                    if (occ && occ !== ' ' && occ !== name) posMap.set(occ, { r: p.r, c: p.c });
                 }
 
                 _swapSeats(r1, c1, r2, c2, posMap) {
@@ -2419,39 +2459,71 @@
                             continue;
                         }
 
-                        // === 模式 '0'（只写两个名字）：必须同桌 ===
+                        // === 模式 '0' / '1'（只写两个名字）：必须同桌 ===
                         // 教室每两列一张课桌，过道在 列2|3、4|5、6|7 之间；
                         // 同桌 = 同一行且列号为 (1,2)(3,4)(5,6)(7,8) 之一（0 基即 c ^ 1）。
-                        // 优先让第一个人坐过去；若第一个人被固定座位锁住，则让第二个人坐过来。
-                        if (modeId === '0' && rule.length === 3) {
+                        // 依次尝试：① 让甲坐到乙的同桌位 ② 让乙坐到甲的同桌位 ③ 另找一张空桌让两人一起搬过去
+                        if ((modeId === '0' || modeId === '1') && rule.length === 3) {
                             const n1 = rule[1], n2 = rule[2];
                             if (n1 === n2) continue;
                             const p1 = posMap.get(n1), p2 = posMap.get(n2);
                             if (!p1 || !p2) continue;
-                            const isDesk = (p1.r === p2.r && (p1.c ^ 1) === p2.c);
-                            if (isDesk) { addPairConstraint(n1, n2, (x) => C_desk(x)); continue; }
-                            let mover = null, anchor = null;
-                            if (!fixedSeats.has(n1)) { mover = n1; anchor = n2; }
-                            else if (!fixedSeats.has(n2)) { mover = n2; anchor = n1; }
-                            if (!mover) continue;                       // 两人都被固定，无法调整
-                            const pm = posMap.get(mover), pa = posMap.get(anchor);
-                            const tr = pa.r, tc = pa.c ^ 1;             // 同桌座位（唯一）
-                            if (!passConstraints(mover, tr, tc)) continue;   // 需同时满足该同学已有约束
-                            const avail = this._tryCollectAvailable([{ r: tr, c: tc }], mover, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
-                            if (this._pickAndSwap(avail, pm.r, pm.c, posMap, protectedByDistance)) {
-                                addPairConstraint(mover, anchor, (x) => C_desk(x));
+                            if (p1.r === p2.r && (p1.c ^ 1) === p2.c) {
+                                addPairConstraint(n1, n2, (x) => C_desk(x));
+                                continue;
                             }
+                            let done = false;
+                            // ① / ② 谁方便谁坐过去（对方固定座位时只有一种选择）
+                            const moveToMate = (mover, anchor) => {
+                                if (fixedSeats.has(mover)) return false;
+                                const pm = posMap.get(mover), pa = posMap.get(anchor);
+                                const tr = pa.r, tc = pa.c ^ 1;
+                                if (!passConstraints(mover, tr, tc)) return false;
+                                const avail = this._tryCollectAvailable([{ r: tr, c: tc }], mover, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
+                                return this._pickAndSwap(avail, pm.r, pm.c, posMap, protectedByDistance);
+                            };
+                            done = moveToMate(n1, n2) || moveToMate(n2, n1);
+                            // ③ 两个同桌位都被占用时：随机找一张桌子，把两人一起搬过去
+                            if (!done && !fixedSeats.has(n1) && !fixedSeats.has(n2)) {
+                                const desks = [];
+                                for (let r = 0; r < R; r++) for (let c = 0; c < C; c += 2) desks.push({ r, c });
+                                for (let i = desks.length - 1; i > 0; i--) {
+                                    const j = Math.floor(rng() * (i + 1));
+                                    [desks[i], desks[j]] = [desks[j], desks[i]];
+                                }
+                                const canTake = (occ, a, b) => !occ || occ === ' ' || occ === a || occ === b ||
+                                    (!protectedByRule3.has(occ) && !protectedByDistance.has(occ) && !constraintMap.has(occ) && !fixedSeats.has(occ));
+                                for (const d of desks) {
+                                    const s1 = { r: d.r, c: d.c }, s2 = { r: d.r, c: d.c + 1 };
+                                    // 两种分配都试：甲左乙右 / 甲右乙左
+                                    for (const [ma, ta, mb, tb] of [[n1, s1, n2, s2], [n1, s2, n2, s1]]) {
+                                        if (!canTake(this.ans[ta.r][ta.c], ma, mb)) continue;
+                                        if (!canTake(this.ans[tb.r][tb.c], ma, mb)) continue;
+                                        if (!passConstraints(ma, ta.r, ta.c) || !passConstraints(mb, tb.r, tb.c)) continue;
+                                        this._moveSeat(ma, ta, posMap);
+                                        this._moveSeat(mb, tb, posMap);
+                                        protectedByDistance.add(ma);
+                                        protectedByDistance.add(mb);
+                                        done = true;
+                                        break;
+                                    }
+                                    if (done) break;
+                                }
+                            }
+                            if (done) addPairConstraint(n1, n2, (x) => C_desk(x));
                             continue;
                         }
 
-                        // === 模式 '1'：距离约束 (1 name1 name2 [prob%] | [minDist maxDist prob%]) ===
+                        // === 模式 '1'：距离约束 (1 name1 name2 [prob%] | minDist maxDist [prob%]) ===
                         if (modeId === '1' || modeId === '0') {
-                            if (rule.length !== 3 && rule.length !== 4 && rule.length !== 6) continue;
+                            if (rule.length !== 3 && rule.length !== 4 && rule.length !== 5 && rule.length !== 6) continue;
                             const n1 = rule[1], n2 = rule[2];
                             if (n1 === n2) continue;
                             let minD = modeId === '0' ? 2 : 1, maxD = modeId === '0' ? 99 : 2, probVal = 100;
                             if (rule.length === 4) probVal = parseInt(rule[3]);
+                            else if (rule.length === 5) { minD = parseInt(rule[3]); maxD = parseInt(rule[4]); }
                             else if (rule.length === 6) { minD = parseInt(rule[3]); maxD = parseInt(rule[4]); probVal = parseInt(rule[5]); if (isNaN(minD)) minD = 1; if (isNaN(maxD)) maxD = 2; }
+                            if (isNaN(minD) || isNaN(maxD) || minD < 0 || maxD > 99 || minD > maxD) continue;
                             if (isNaN(probVal) || probVal < 0 || probVal > 100 || rng() * 100 >= probVal) continue;
                             const p1 = posMap.get(n1), p2 = posMap.get(n2);
                             if (!p1 || !p2 || fixedSeats.has(n1)) continue;
@@ -2589,7 +2661,7 @@
             new SeatAllocatorApp();
             console.log('iAxiom Placement System hyper version - Web Edition');
             console.log('🔐 随机引擎: batch-256 crypto×时间熵 + 3轮 Fisher-Yates + uniqueRandomMatrix + 反重复修复(禁坐回最近4次座位/上次邻座)');
-            console.log('📐 规则系统: 模式0-B (0同桌/不相邻|1距离|2固定|3行概率|4列排除|5行范围|6相邻|7同行|8异行|9角落|A左右|B斜角) · 同一人多规则=约束叠加 · 0只写两个名字=必须同桌');
+            console.log('📐 规则系统: 模式0-B (0/1只写两名字=同桌|0不相邻|1距离|2固定|3行概率|4列排除|5行范围|6相邻|7同行|8异行|9角落|A左右|B斜角) · 同一人多规则=约束叠加 · 0或1只写两个名字=必须同桌(同排同张桌, 不隔过道/不斜角)');
             console.log('🎲 规则生效模式: 普通模式(日冷却) | 特殊模式(周冷却-无限制)');
         })();
     </script>

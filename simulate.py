@@ -308,9 +308,10 @@ def apply_correct_rules(ans, rules):
                 add_constraint(name1, c_diag(name2))
             continue
 
-        # 模式 '0'（只写两个名字）：必须同桌
-        # 每两列一张课桌（0 基配对 (0,1)(2,3)(4,5)(6,7)），c ^ 1 为同桌列；优先第一个人坐过去
-        if mode_id == '0' and len(rule) == 3:
+        # 模式 '0' / '1'（只写两个名字）：必须同桌
+        # 每两列一张课桌（0 基配对 (0,1)(2,3)(4,5)(6,7)），c ^ 1 为同桌列
+        # 依次尝试：① 甲坐过去 ② 乙坐过来 ③ 另找一张空桌两人一起搬过去
+        if mode_id in ('0', '1') and len(rule) == 3:
             name1, name2 = rule[1], rule[2]
             if name1 == name2:
                 continue
@@ -331,34 +332,72 @@ def apply_correct_rules(ans, rules):
                 add_constraint(name1, c_desk(name2))
                 add_constraint(name2, c_desk(name1))
                 continue
-            if name1 not in fixed_seats:
-                mover, anchor = name1, name2
-            elif name2 not in fixed_seats:
-                mover, anchor = name2, name1
-            else:
-                continue
-            pos_m = _find_seat(ans, mover)
-            pos_a = _find_seat(ans, anchor)
-            mr, mc = pos_m
-            tr, tc = pos_a[0], pos_a[1] ^ 1
-            if not pass_constraints(mover, tr, tc):
-                continue
-            occ = ans[tr][tc]
-            if occ and occ != ' ' and occ != mover:
-                if occ in fixed_seats and fixed_seats[occ] == (tr, tc):
-                    continue
-                if occ in protected_by_rule3 or occ in protected_by_distance or occ in constraints:
-                    continue
-            if tr == mr and tc == mc:
-                continue
-            ans[tr][tc] = mover
-            ans[mr][mc] = occ if occ != mover else ' '
-            protected_by_distance.add(mover)
-            add_constraint(mover, c_desk(anchor))
-            add_constraint(anchor, c_desk(mover))
+
+            def try_move_to(mover, anchor):
+                """让 mover 坐到 anchor 的同桌位；不可行时返回 False"""
+                if mover in fixed_seats:
+                    return False
+                pm = _find_seat(ans, mover)
+                pa = _find_seat(ans, anchor)
+                if pm is None or pa is None:
+                    return False
+                tr, tc = pa[0], pa[1] ^ 1
+                if not pass_constraints(mover, tr, tc):
+                    return False
+                occ = ans[tr][tc]
+                if occ and occ != ' ' and occ != mover:
+                    if occ in fixed_seats and fixed_seats[occ] == (tr, tc):
+                        return False
+                    if occ in protected_by_rule3 or occ in protected_by_distance or occ in constraints:
+                        return False
+                if tr == pm[0] and tc == pm[1]:
+                    return False
+                ans[tr][tc] = mover
+                ans[pm[0]][pm[1]] = occ if occ != mover else ' '
+                protected_by_distance.add(mover)
+                return True
+
+            # ① 甲坐过去 ② 乙坐过来 ③ 另找一张空桌两人一起搬过去
+            done = try_move_to(name1, name2) or try_move_to(name2, name1)
+            if not done and name1 not in fixed_seats and name2 not in fixed_seats:
+                desks = [(r, c) for r in range(rows) for c in range(0, cols, 2)]
+                for i in range(len(desks) - 1, 0, -1):
+                    j = math.floor(crypto_random() * (i + 1))
+                    desks[i], desks[j] = desks[j], desks[i]
+                for dr, dc in desks:
+                    for ma, ta, mb, tb in (((name1, (dr, dc)), (name2, (dr, dc + 1))),
+                                           ((name1, (dr, dc + 1)), (name2, (dr, dc)))):
+                        occs = [ans[ta[0]][ta[1]], ans[tb[0]][tb[1]]]
+                        ok_occ = True
+                        for occ in occs:
+                            if not occ or occ == ' ' or occ == ma or occ == mb:
+                                continue
+                            if occ in fixed_seats or occ in protected_by_rule3 or occ in protected_by_distance or occ in constraints:
+                                ok_occ = False
+                                break
+                        if not ok_occ:
+                            continue
+                        if not pass_constraints(ma, ta[0], ta[1]) or not pass_constraints(mb, tb[0], tb[1]):
+                            continue
+                        for nm, tg in ((ma, ta), (mb, tb)):
+                            cur = _find_seat(ans, nm)
+                            if cur is None or cur == tg:
+                                continue
+                            o = ans[tg[0]][tg[1]]
+                            ans[tg[0]][tg[1]] = nm
+                            ans[cur[0]][cur[1]] = o if o and o != ' ' else ' '
+                        protected_by_distance.add(ma)
+                        protected_by_distance.add(mb)
+                        done = True
+                        break
+                    if done:
+                        break
+            if done:
+                add_constraint(name1, c_desk(name2))
+                add_constraint(name2, c_desk(name1))
             continue
 
-        if len(rule) != 3 and len(rule) != 4 and len(rule) != 6:
+        if len(rule) != 3 and len(rule) != 4 and len(rule) != 5 and len(rule) != 6:
             continue
         name1, name2 = rule[1], rule[2]
         if name1 == name2:
@@ -369,6 +408,9 @@ def apply_correct_rules(ans, rules):
         prob_val = 100
         if len(rule) == 4:
             prob_val = int(rule[3])
+        elif len(rule) == 5:
+            min_dist = int(rule[3])
+            max_dist = int(rule[4])
         elif len(rule) == 6:
             min_dist = int(rule[3])
             max_dist = int(rule[4])
@@ -602,8 +644,12 @@ def generate_html(path, students, rules, sorted_pairs,
         elif r[0] == '3':
             rules_desc.append(f"概率行: {r[1]} {r[2]}% 行5-7")
         elif r[0] == '1':
-            if len(r) == 4:
+            if len(r) == 3:
+                rules_desc.append(f"同桌: {r[1]}-{r[2]}")
+            elif len(r) == 4:
                 rules_desc.append(f"距离: {r[1]}-{r[2]} 距1-2, {r[3]}%")
+            elif len(r) == 5:
+                rules_desc.append(f"距离: {r[1]}-{r[2]} 距{r[3]}-{r[4]}")
             elif len(r) == 6:
                 rules_desc.append(f"距离: {r[1]}-{r[2]} 距{r[3]}-{r[4]}, {r[5]}%")
         elif r[0] == '0':
