@@ -869,7 +869,7 @@
                 <div class="title-bar-left">
                     <div class="app-icon">📐</div>
                     <span class="app-title">iAxiom Placement System</span>
-                    <span class="app-version">v9.4.0</span>
+                    <span class="app-version">v9.4.1</span>
                 </div>
                 <div class="title-bar-right">
                     <span class="mode-badge normal" id="modeBadge">普通模式</span>
@@ -1360,7 +1360,7 @@
                         localStorage.setItem('iax_rules', JSON.stringify(this.rules));
                     } catch (e) { /* 静默处理 */ }
 
-                    this._log(`本地导入完成：${this.students.length} 名学生，${this.rules.length} 条规则`);
+                    this._log(`本地导入完成：${this.students.length} 名学生`);
                     this._setStatus('本地导入完成', 'active');
                     this._updateButtonStates();
                 }
@@ -1594,53 +1594,6 @@
                     }
                 }
 
-                // 规则里的姓名与名单核对（避免"名字写错导致规则被静默跳过"）
-                _warnUnknownRuleNames() {
-                    if (!this.rules.length || !this.students.length) return;
-                    const roster = new Set(this.students);
-                    const singleNameModes = ['2', '3', '4', '5', '9', 'A'];
-                    const unknown = new Set();
-                    for (const rule of this.rules) {
-                        if (!rule || rule.length < 3) continue;
-                        const slots = singleNameModes.indexOf(rule[0]) >= 0 ? [1] : [1, 2];
-                        for (const i of slots) {
-                            const v = rule[i];
-                            if (v && !/^-?\d+$/.test(v) && !roster.has(v)) unknown.add(v);
-                        }
-                    }
-                    if (unknown.size) {
-                        this._log(`⚠️ 规则中的姓名不在名单中，相关规则会被跳过：${[...unknown].join('、')}`);
-                    }
-                    const badFormat = this._checkRuleFormats();
-                    if (badFormat.length) {
-                        this._log(`⚠️ 有 ${badFormat.length} 条规则格式无法识别（已跳过，请核对字段个数）：${badFormat.join(' / ')}`);
-                    }
-                }
-
-                /**
-                 * 规则格式自检：字段个数/参数类型不符合该模式要求的规则会被引擎跳过，
-                 * 这里把它们找出来提示，避免"写了规则却没生效"。
-                 * @returns {string[]} 格式有问题的规则原文
-                 */
-                _checkRuleFormats() {
-                    const num = (v) => v !== undefined && v !== '' && !isNaN(parseInt(v));
-                    const pair = (n, withProb) => (n === 3) || (n === 4 && num(withProb));
-                    const bad = [];
-                    for (const rule of this.rules) {
-                        const n = rule.length, m = rule[0];
-                        let ok = false;
-                        if (m === '2') ok = n === 4 && num(rule[2]) && num(rule[3]);
-                        else if (m === '3') ok = (n === 3 && num(rule[2])) || (n === 5 && num(rule[2]) && num(rule[3]) && num(rule[4]));
-                        else if (m === '4' || m === '5') ok = (n === 4 && num(rule[2]) && num(rule[3])) || (n === 5 && num(rule[2]) && num(rule[3]) && num(rule[4]));
-                        else if (m === '6' || m === '7' || m === '8' || m === 'B') ok = pair(n, rule[3]);
-                        else if (m === '9') ok = n === 3 && num(rule[2]);
-                        else if (m === 'A') ok = (n === 3) || (n === 4);
-                        else if (m === '0' || m === '1') ok = n === 3 || (n === 4 && num(rule[3])) || (n === 5 && num(rule[3]) && num(rule[4])) || (n === 6 && num(rule[3]) && num(rule[4]) && num(rule[5]));
-                        if (!ok) bad.push(rule.join(' '));
-                    }
-                    return bad;
-                }
-
                 // ========== 核心：随机座位生成（使用 window.crypto.getRandomValues 高随机性） ==========
                 _generateSeats() {
                     if (this.students.length === 0) { alert('请先获取学生名单！'); return; }
@@ -1650,7 +1603,6 @@
 
                     setTimeout(() => {
                         try {
-                            this._warnUnknownRuleNames();
                             this._randomSeat();
                             this._log('随机座位分配完成（增强随机引擎 v3 + 反重复）');
                             this._correctRules();
@@ -1662,12 +1614,6 @@
                             this._updateSeatDisplay();
                             try {
                                 this._log(this._repeatCheckText());
-                                const unmet = this._checkRuleSatisfaction();
-                                if (unmet.length) {
-                                    this._log(`⚠️ 未能满足的规则 ${unmet.length} 条（多为互相冲突或座位被占用）：${unmet.join(' / ')}`);
-                                } else if (this.rules.length) {
-                                    this._log(`✅ 规则校验通过（${this.rules.length} 条全部满足）`);
-                                }
                                 this._recordSeatHistory();
                             } catch (e2) { /* 记录失败不影响出表 */ }
                             this._setStatus('座位表生成完成', 'active');
@@ -2003,76 +1949,6 @@
                     return `📌 反重复检查（${checked} 人）：坐回原座位 ${exact} 人 · 仍在邻座 ${near} 人 · 同排 ${rowsame} 人`;
                 }
 
-                /**
-                 * 规则自检：核对最终座位表是否满足每条规则（概率 < 100 的规则不参与判定）
-                 * @returns {string[]} 未满足的规则原文
-                 */
-                _checkRuleSatisfaction() {
-                    const pos = this._buildPosMap();
-                    const unmet = [];
-                    const dist = (a, b) => Math.abs(a.r - b.r) + Math.abs(a.c - b.c);
-                    const isDesk = (a, b) => a.r === b.r && (a.c ^ 1) === b.c;
-                    for (const rule of this.rules) {
-                        if (!rule || rule.length < 3 || rule.length > 7) continue;
-                        const mode = rule[0];
-                        const a = pos.get(rule[1]) || null;
-                        const b = pos.get(rule[2]) || null;
-                        // 概率不足 100 的规则允许不满足，不参与判定
-                        let prob = 100;
-                        if ((mode === '3' || mode === '4' || mode === '5') && rule.length === 5) prob = parseInt(rule[4]);
-                        else if ((mode === '6' || mode === '7' || mode === '8' || mode === 'B') && rule.length === 4) prob = parseInt(rule[3]);
-                        else if ((mode === '1' || mode === '0') && rule.length === 4) prob = parseInt(rule[3]);
-                        else if ((mode === '1' || mode === '0') && rule.length === 6) prob = parseInt(rule[5]);
-                        else if (mode === '2' || (mode === '3' && rule.length === 3)) prob = 100;
-                        if (!isNaN(prob) && prob < 100) continue;
-                        let ok = true;
-                        if (mode === '2') {
-                            const tr = parseInt(rule[2]), tc = parseInt(rule[3]);
-                            ok = !!a && a.r === tr && a.c === tc;
-                        } else if ((mode === '0' || mode === '1') && rule.length === 3) {
-                            ok = !!a && !!b && isDesk(a, b);                       // 必须同桌
-                        } else if (mode === '0' || mode === '1') {
-                            if (!a || !b) { ok = false; }
-                            else {
-                                let lo = mode === '0' ? 2 : 1, hi = mode === '0' ? 99 : 2;
-                                if (rule.length === 5) {
-                                    lo = parseInt(rule[3]); hi = parseInt(rule[4]);
-                                } else if (rule.length === 6) {
-                                    lo = parseInt(rule[3]); hi = parseInt(rule[4]);
-                                    if (isNaN(lo)) lo = 1;
-                                    if (isNaN(hi)) hi = 2;
-                                }
-                                const dd = dist(a, b);
-                                ok = dd >= lo && dd <= hi;
-                            }
-                        } else if (mode === '3') {
-                            const rMin = rule.length === 3 ? 4 : parseInt(rule[2]) - 1;
-                            const rMax = rule.length === 3 ? 6 : parseInt(rule[3]) - 1;
-                            ok = !!a && a.r >= rMin && a.r <= rMax;
-                        } else if (mode === '4') {
-                            const cs = parseInt(rule[2]) - 1, ce = parseInt(rule[3]) - 1;
-                            ok = !!a && (a.c < cs || a.c > ce);
-                        } else if (mode === '5') {
-                            const rs = parseInt(rule[2]) - 1, re = parseInt(rule[3]) - 1;
-                            ok = !!a && a.r >= rs && a.r <= re;
-                        } else if (mode === '6') {
-                            ok = !!a && !!b && dist(a, b) === 1;
-                        } else if (mode === '7') {
-                            ok = !!a && !!b && a.r === b.r;
-                        } else if (mode === '8') {
-                            ok = !!a && !!b && a.r !== b.r;
-                        } else if (mode === '9') {
-                            ok = !!a && (a.r === 0 || a.r === 6) && (a.c === 0 || a.c === 7);
-                        } else if (mode === 'A') {
-                            const side = (rule[2] === 'L' || rule[2] === 'R') ? rule[2] : null;
-                            ok = !!a && (!side || (side === 'L' ? a.c < 4 : a.c >= 4));
-                        } else if (mode === 'B') {
-                            ok = !!a && !!b && Math.abs(a.r - b.r) === 1 && Math.abs(a.c - b.c) === 1;
-                        }
-                        if (!ok) unmet.push(rule.join(' '));
-                    }
-                    return unmet;
-                }
 
                 // ---------- 查找座位 ----------
                 _findSeat(name) {
@@ -2661,8 +2537,6 @@
             new SeatAllocatorApp();
             console.log('iAxiom Placement System hyper version - Web Edition');
             console.log('🔐 随机引擎: batch-256 crypto×时间熵 + 3轮 Fisher-Yates + uniqueRandomMatrix + 反重复修复(禁坐回最近4次座位/上次邻座)');
-            console.log('📐 规则系统: 模式0-B (0/1只写两名字=同桌|0不相邻|1距离|2固定|3行概率|4列排除|5行范围|6相邻|7同行|8异行|9角落|A左右|B斜角) · 同一人多规则=约束叠加 · 0或1只写两个名字=必须同桌(同排同张桌, 不隔过道/不斜角)');
-            console.log('🎲 规则生效模式: 普通模式(日冷却) | 特殊模式(周冷却-无限制)');
         })();
     </script>
 
