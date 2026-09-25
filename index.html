@@ -710,7 +710,7 @@
                 <div class="title-bar-left">
                     <div class="app-icon">📐</div>
                     <span class="app-title">iAxiom Placement System</span>
-                    <span class="app-version">v9.0.0</span>
+                    <span class="app-version">v9.1.0</span>
                 </div>
                 <div class="title-bar-right">
                     <span class="mode-badge normal" id="modeBadge">普通模式</span>
@@ -827,9 +827,30 @@
              * 使用 window.crypto.getRandomValues 生成高随机性的 [0, 1) 浮点数
              * 核心：window.crypto.getRandomValues(new Uint32Array(1))[0] 获取一个32位无符号整数
              * 除以 0x100000000 (即 2^32 = 4294967296) 得到 [0, 1) 范围的均匀分布随机数
+             * 若浏览器不支持/禁用了 crypto，则回退到"时间 + 调用计数"混合的 PRNG，绝不返回固定序列
              */
+            let __rngFallbackState = ((Date.now() & 0xffffffff) ^ 0x9E3779B9) >>> 0;
+            let __rngFallbackCalls = 0;
+
+            function __fallbackRandom() {
+                __rngFallbackCalls = (__rngFallbackCalls + 1) >>> 0;
+                __rngFallbackState = (__rngFallbackState + 0x6D2B79F5 + __rngFallbackCalls) >>> 0;
+                let t = __rngFallbackState;
+                t = Math.imul(t ^ t >>> 15, 1 | t);
+                t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t;
+                return ((t ^ t >>> 14) >>> 0) / 4294967296;
+            }
+
+            function __cryptoObj() {
+                return (typeof window !== 'undefined' && (window.crypto || window.msCrypto)) || null;
+            }
+
             function cryptoRandom() {
-                return window.crypto.getRandomValues(new Uint32Array(1))[0] / 0x100000000;
+                try {
+                    const c = __cryptoObj();
+                    if (c && c.getRandomValues) return c.getRandomValues(new Uint32Array(1))[0] / 0x100000000;
+                } catch (e) { /* 落到兜底 */ }
+                return __fallbackRandom();
             }
 
             /**
@@ -837,7 +858,34 @@
              * 返回一个32位无符号整数作为随机种子
              */
             function getStrongSeed() {
-                return window.crypto.getRandomValues(new Uint32Array(1))[0];
+                try {
+                    const c = __cryptoObj();
+                    if (c && c.getRandomValues) return c.getRandomValues(new Uint32Array(1))[0];
+                } catch (e) { /* 落到兜底 */ }
+                return Math.floor(__fallbackRandom() * 0x100000000) >>> 0;
+            }
+
+            /**
+             * 填充熵池：crypto 随机值 与 时间熵 逐元素 XOR 混合
+             * （XOR 常量为双射，不会削弱 crypto 的熵；若 crypto 异常返回固定值，时间熵可兜底产生变化）
+             */
+            function fillEntropyPool(pool) {
+                const now = Date.now();
+                const perf = (typeof performance !== 'undefined' && performance.now) ? Math.floor(performance.now() * 1000) : now;
+                const mix = ((now ^ perf) >>> 0);
+                try {
+                    const c = __cryptoObj();
+                    if (c && c.getRandomValues) {
+                        c.getRandomValues(pool);
+                        for (let i = 0; i < pool.length; i++) {
+                            pool[i] = (pool[i] ^ mix ^ Math.imul(i + 1, 0x9E3779B9)) >>> 0;
+                        }
+                        return;
+                    }
+                } catch (e) { /* 落到兜底 */ }
+                for (let i = 0; i < pool.length; i++) {
+                    pool[i] = Math.floor(__fallbackRandom() * 0x100000000) >>> 0;
+                }
             }
 
             // mulberry32 确定性伪随机数生成器（保留用于需要可重现序列的场景）
@@ -898,6 +946,16 @@
                 }
                 return matrix;
             }
+
+            // ============ 反重复随机（避免每周坐回原位/邻座） ============
+            const SEAT_HISTORY_KEY = 'iax_seat_history';   // 历次抽座记录（localStorage）
+            const SEAT_HISTORY_MAX = 12;                   // 最多保留的历史记录条数
+            const ANTI_REPEAT = {
+                exactDraws: 4,      // 禁止坐回"最近 N 次抽座"中完全相同的座位
+                nearRadius: 1,      // 上次座位周围一圈（|Δ行|≤1 且 |Δ列|≤1）尽量避免
+                maxIterations: 8000, // 修复迭代上限
+                partnerTries: 60    // 每次尝试交换的候选人数
+            };
 
             // ============ 主应用类 ============
             class SeatAllocatorApp {
@@ -1163,14 +1221,16 @@
                 _handlePasswordSubmit() {
                     const pwd = this.passwordInput.value;
                     if (!pwd) { this.passwordError.textContent = '请输入密码'; return; }
-                    // 在密码框输入 reset：重置规则修正记录（清除普通/特殊模式的冷却记录）
+                    // 在密码框输入 reset：重置记录（规则修正冷却 + 反重复座位历史）
                     if (pwd.trim().toLowerCase() === 'reset') {
                         localStorage.removeItem('iax_correct_rules_day');
                         localStorage.removeItem('iax_correct_rules_week');
+                        this._clearSeatHistory();
                         this.correctRulesEnabled = true;
                         this.correctRulesApplyCount = 0;
+                        this._repeatGuard = null;
                         this.passwordError.style.color = '#2e7d32';
-                        this.passwordError.textContent = '✅ 已重置规则修正记录（普通/特殊冷却已清除），请输入访问密码继续。';
+                        this.passwordError.textContent = '✅ 已重置全部记录（规则修正冷却 + 座位历史），请输入访问密码继续。';
                         this.passwordInput.value = '';
                         this.passwordInput.focus();
                         return;
@@ -1359,9 +1419,18 @@
                     setTimeout(() => {
                         try {
                             this._randomSeat();
-                            this._log('随机座位分配完成（增强随机引擎 v2）');
+                            this._log('随机座位分配完成（增强随机引擎 v3 + 反重复）');
                             this._correctRules();
+                            // ★ 二次修复：规则修正会交换学生，被换下来的人可能落回旧位置附近，
+                            //    这里只交换"未被规则约束的学生"，因此不会破坏任何规则
+                            if (this._repeatGuard && this._ruleLocked && this._ruleLocked.size) {
+                                this._applyAntiRepeat(this._repeatGuard, this._ruleLocked);
+                            }
                             this._updateSeatDisplay();
+                            try {
+                                this._log(this._repeatCheckText());
+                                this._recordSeatHistory();
+                            } catch (e2) { /* 记录失败不影响出表 */ }
                             this._setStatus('座位表生成完成', 'active');
                             this._log('✅ 座位表生成完成');
                         } catch (e) {
@@ -1381,17 +1450,18 @@
                 _randomSeat() {
                     const rows = 7, cols = 8;
                     this.ans = Array.from({ length: rows }, () => new Array(cols).fill(' '));
+                    this._ruleLocked = null;   // 规则锁在 _correctRules 中重建
 
                     const studentCount = this.students.length;
                     const shuffled = [...this.students];
 
-                    // 使用批量随机值提升熵质量：一次性获取 256 个 32-bit 随机值
+                    // 使用批量随机值提升熵质量：一次性获取 256 个 32-bit 随机值（crypto + 时间熵混合，带兜底）
                     const entropyPool = new Uint32Array(256);
-                    window.crypto.getRandomValues(entropyPool);
+                    fillEntropyPool(entropyPool);
                     let entropyIdx = 0;
                     function batchedCryptoRandom() {
                         if (entropyIdx >= entropyPool.length) {
-                            window.crypto.getRandomValues(entropyPool);
+                            fillEntropyPool(entropyPool);
                             entropyIdx = 0;
                         }
                         return entropyPool[entropyIdx++] / 0x100000000;
@@ -1418,8 +1488,208 @@
                         }
                     }
 
+                    // ★ 反重复：先构建历史参照，再用"交换式修复"消除坐回原位/仍在邻座
+                    this._repeatGuard = this._buildRepeatGuard();
+                    this._antiRepeatStats = this._applyAntiRepeat(this._repeatGuard);
+                    if (this._repeatGuard) {
+                        this._log(`   ↳ 反重复修复：交换 ${this._antiRepeatStats.iterations} 次迭代 · 剩余 原位 ${this._antiRepeatStats.exact} / 邻座 ${this._antiRepeatStats.near}`);
+                    }
+
                     const seedForLog = getStrongSeed();
-                    this._log(`   ↳ 随机种子: ${seedForLog} | 熵池: batch-256 + 3轮洗牌`);
+                    this._log(`   ↳ 随机种子: ${seedForLog} | 熵池: batch-256 (crypto×时间熵) + 3轮洗牌 + 反重复修复`);
+                }
+
+                // ---------- 反重复：座位历史 ----------
+                _loadSeatHistory() {
+                    try {
+                        const raw = localStorage.getItem(SEAT_HISTORY_KEY);
+                        const arr = raw ? JSON.parse(raw) : [];
+                        return Array.isArray(arr) ? arr.filter(e => e && e.seats) : [];
+                    } catch (e) { return []; }
+                }
+
+                _saveSeatHistory(list) {
+                    try {
+                        localStorage.setItem(SEAT_HISTORY_KEY, JSON.stringify(list.slice(0, SEAT_HISTORY_MAX)));
+                    } catch (e) { /* 忽略存储异常 */ }
+                }
+
+                _clearSeatHistory() {
+                    try { localStorage.removeItem(SEAT_HISTORY_KEY); } catch (e) { /* 忽略 */ }
+                }
+
+                _snapshotSeats() {
+                    const m = {};
+                    for (let r = 0; r < 7; r++) {
+                        for (let c = 0; c < 8; c++) {
+                            const n = this.ans[r][c];
+                            if (n && n !== ' ') m[n] = r + ',' + c;
+                        }
+                    }
+                    return m;
+                }
+
+                // 每次生成完成后记录一张"实际使用的座位表"
+                _recordSeatHistory() {
+                    const snapshot = this._snapshotSeats();
+                    if (!Object.keys(snapshot).length) return;
+                    const list = this._loadSeatHistory();
+                    list.unshift({ ts: Date.now(), seats: snapshot });
+                    this._saveSeatHistory(list);
+                }
+
+                /**
+                 * 构建反重复参照：
+                 *  exact —— 最近 N 次抽座（优先取"非今天"的记录，保证跨周比较；再加上今天的预览记录）
+                 *  near  —— 上一次（跨周优先）座位的周围一圈
+                 *  refRow—— 上一次所在行（软约束：尽量避免整周同排）
+                 */
+                _buildRepeatGuard() {
+                    const list = this._loadSeatHistory();
+                    if (!list.length) return null;
+                    const midnight = new Date();
+                    midnight.setHours(0, 0, 0, 0);
+                    const midnightTs = midnight.getTime();
+                    const older = list.filter(e => e.ts < midnightTs);
+                    const todays = list.filter(e => e.ts >= midnightTs);
+
+                    const exactEntries = older.slice(0, ANTI_REPEAT.exactDraws);
+                    // 同一天内反复预览时，也避免生成一模一样的表
+                    for (const e of todays.slice(0, 2)) exactEntries.push(e);
+
+                    const exact = new Map();
+                    for (const entry of exactEntries) {
+                        const seats = entry.seats || {};
+                        for (const name in seats) {
+                            if (!exact.has(name)) exact.set(name, new Set());
+                            exact.get(name).add(seats[name]);
+                        }
+                    }
+
+                    const ref = older[0] || list[0];
+                    const near = new Map();
+                    const refRow = new Map();
+                    const refSeats = ref.seats || {};
+                    for (const name in refSeats) {
+                        const parts = String(refSeats[name]).split(',');
+                        const r = parseInt(parts[0], 10), c = parseInt(parts[1], 10);
+                        if (isNaN(r) || isNaN(c)) continue;
+                        refRow.set(name, r);
+                        const ring = new Set();
+                        for (let dr = -ANTI_REPEAT.nearRadius; dr <= ANTI_REPEAT.nearRadius; dr++) {
+                            for (let dc = -ANTI_REPEAT.nearRadius; dc <= ANTI_REPEAT.nearRadius; dc++) {
+                                if (!dr && !dc) continue;
+                                const rr = r + dr, cc = c + dc;
+                                if (rr >= 0 && rr < 7 && cc >= 0 && cc < 8) ring.add(rr + ',' + cc);
+                            }
+                        }
+                        near.set(name, ring);
+                    }
+                    return { exact, near, refRow, hasHistory: true };
+                }
+
+                // 代价：坐回原座位(100) > 仍在邻座(20) > 与上次同排(1)
+                _repeatCost(guard, name, r, c) {
+                    if (!guard) return 0;
+                    const key = r + ',' + c;
+                    let cost = 0;
+                    const ex = guard.exact.get(name);
+                    if (ex && ex.has(key)) cost += 100;
+                    const nr = guard.near.get(name);
+                    if (nr && nr.has(key)) cost += 20;
+                    if (guard.refRow.get(name) === r) cost += 1;
+                    return cost;
+                }
+
+                /**
+                 * 交换式修复：通过学生之间互换座位，消除"坐回原位/仍在邻座"
+                 * （只做交换，不改变"一人一座"，因此不会产生重复或空位）
+                 * @param {object} guard 反重复参照
+                 * @param {Set} locked 受规则约束、不允许被交换的学生（可为空）
+                 */
+                _applyAntiRepeat(guard, locked) {
+                    const stats = { exact: 0, near: 0, rowsame: 0, iterations: 0, guard: !!guard };
+                    if (!guard) return stats;
+                    const isLocked = (n) => !!(locked && locked.has(n));
+                    const names = [];
+                    const pos = new Map();
+                    for (let r = 0; r < 7; r++) {
+                        for (let c = 0; c < 8; c++) {
+                            const n = this.ans[r][c];
+                            if (n && n !== ' ') { names.push(n); pos.set(n, { r, c }); }
+                        }
+                    }
+                    if (names.length < 2) return stats;
+
+                    const costs = new Map();
+                    for (const n of names) {
+                        const p = pos.get(n);
+                        costs.set(n, this._repeatCost(guard, n, p.r, p.c));
+                    }
+
+                    const HARD = 20;   // 达到该代价视为需要修复（原位/邻座）
+                    let failures = 0;
+                    let iter = 0;
+                    for (; iter < ANTI_REPEAT.maxIterations; iter++) {
+                        const violators = names.filter(n => !isLocked(n) && costs.get(n) >= HARD);
+                        if (!violators.length) break;
+                        const a = violators[Math.floor(cryptoRandom() * violators.length)];
+                        const pa = pos.get(a);
+                        let bestB = null, bestDelta = 0;
+                        for (let t = 0; t < ANTI_REPEAT.partnerTries; t++) {
+                            const b = names[Math.floor(cryptoRandom() * names.length)];
+                            if (b === a || isLocked(b)) continue;
+                            const pb = pos.get(b);
+                            const delta = (this._repeatCost(guard, a, pb.r, pb.c) + this._repeatCost(guard, b, pa.r, pa.c))
+                                        - (costs.get(a) + costs.get(b));
+                            if (delta < bestDelta) {
+                                bestDelta = delta; bestB = b;
+                                if (delta <= -HARD) break;   // 一次解决硬冲突，直接采用
+                            }
+                        }
+                        if (bestB) {
+                            const pb = pos.get(bestB);
+                            const tmp = this.ans[pa.r][pa.c];
+                            this.ans[pa.r][pa.c] = this.ans[pb.r][pb.c];
+                            this.ans[pb.r][pb.c] = tmp;
+                            pos.set(a, { r: pb.r, c: pb.c });
+                            pos.set(bestB, { r: pa.r, c: pa.c });
+                            costs.set(a, this._repeatCost(guard, a, pb.r, pb.c));
+                            costs.set(bestB, this._repeatCost(guard, bestB, pa.r, pa.c));
+                            failures = 0;
+                        } else {
+                            // 无法继续改进：达到上限后放弃剩余冲突（避免死循环）
+                            if (++failures > names.length * 2) break;
+                        }
+                    }
+                    for (const n of names) {
+                        const p = pos.get(n);
+                        const cost = this._repeatCost(guard, n, p.r, p.c);
+                        if (cost >= 100) stats.exact++;
+                        else if (cost >= HARD) stats.near++;
+                        else if (cost >= 1) stats.rowsame++;
+                    }
+                    stats.iterations = iter;
+                    return stats;
+                }
+
+                // 生成后的自检文案（对比历史，说明本次是否还有重复/邻座）
+                _repeatCheckText() {
+                    const guard = this._repeatGuard;
+                    if (!guard) return '📌 反重复：首次运行，已建立本周基准座位（下周起自动避开旧座位与邻座）';
+                    let exact = 0, near = 0, rowsame = 0, checked = 0;
+                    for (let r = 0; r < 7; r++) {
+                        for (let c = 0; c < 8; c++) {
+                            const n = this.ans[r][c];
+                            if (!n || n === ' ') continue;
+                            checked++;
+                            const cost = this._repeatCost(guard, n, r, c);
+                            if (cost >= 100) exact++;
+                            else if (cost >= 20) near++;
+                            else if (cost >= 1) rowsame++;
+                        }
+                    }
+                    return `📌 反重复检查（${checked} 人）：坐回原座位 ${exact} 人 · 仍在邻座 ${near} 人 · 同排 ${rowsame} 人`;
                 }
 
                 // ---------- 查找座位 ----------
@@ -1470,6 +1740,13 @@
                         }
                         available.push(cand);
                     }
+                    // 反重复偏好：优先选择不在"历史座位 / 上次邻座"上的候选位
+                    // （规则修正也尽量不把同学放回原位；若全部候选都在旧位置附近，则退回原候选集）
+                    if (this._repeatGuard && available.length > 1) {
+                        const preferred = available.filter(cand =>
+                            this._repeatCost(this._repeatGuard, swapName, cand.r, cand.c) < 20);
+                        if (preferred.length) return preferred;
+                    }
                     return available;
                 }
 
@@ -1510,6 +1787,12 @@
                     const protectedByRule3 = new Set();
                     const protectedByDistance = new Set();
 
+                    // 被规则"锁住"的学生：本次生成中不允许再被反重复二次修复交换
+                    // （含：被规则移动过的人、约束中作为参照的人、固定座位的人）
+                    const ruleLocked = new Set();
+                    this._ruleLocked = ruleLocked;
+                    for (const fixedName of fixedSeats.keys()) ruleLocked.add(fixedName);
+
                     // ── 约束叠加 ──
                     // 同一人被多条移动规则命中时，后执行的规则只能在"仍满足此前已生效约束"的
                     // 座位中挑选，使多个约束可以同时成立（如：第4~6行 ∩ 左半区、距B=2 ∩ 不邻C）。
@@ -1518,6 +1801,7 @@
                     const addConstraint = (name, fn) => {
                         if (!constraintMap.has(name)) constraintMap.set(name, []);
                         constraintMap.get(name).push(fn);
+                        ruleLocked.add(name);
                     };
                     const clearConstraints = (name) => { constraintMap.delete(name); };
                     const passConstraints = (name, r, c) => {
@@ -1525,21 +1809,33 @@
                         if (!arr) return true;
                         return arr.every(fn => fn(r, c));
                     };
-                    const C_dist = (nb, lo, hi) => (r, c) => {
-                        const pb = posMap.get(nb);
-                        if (!pb) return false;
-                        const d = Math.abs(r - pb.r) + Math.abs(c - pb.c);
-                        return d >= lo && d <= hi;
+                    const C_dist = (nb, lo, hi) => {
+                        ruleLocked.add(nb);
+                        return (r, c) => {
+                            const pb = posMap.get(nb);
+                            if (!pb) return false;
+                            const d = Math.abs(r - pb.r) + Math.abs(c - pb.c);
+                            return d >= lo && d <= hi;
+                        };
                     };
                     const C_rowBand = (rs, re) => (r, c) => r >= rs && r <= re;
                     const C_colOutside = (cs, ce) => (r, c) => c < cs || c > ce;
                     const C_colRange = (sc, ec) => (r, c) => c >= sc && c <= ec;
-                    const C_sameRow = (nb) => (r, c) => { const pb = posMap.get(nb); return !!pb && pb.r === r; };
-                    const C_diffRow = (nb) => (r, c) => { const pb = posMap.get(nb); return !!pb && pb.r !== r; };
-                    const C_diag = (nb) => (r, c) => {
-                        const pb = posMap.get(nb);
-                        if (!pb) return false;
-                        return Math.abs(r - pb.r) === 1 && Math.abs(c - pb.c) === 1;
+                    const C_sameRow = (nb) => {
+                        ruleLocked.add(nb);
+                        return (r, c) => { const pb = posMap.get(nb); return !!pb && pb.r === r; };
+                    };
+                    const C_diffRow = (nb) => {
+                        ruleLocked.add(nb);
+                        return (r, c) => { const pb = posMap.get(nb); return !!pb && pb.r !== r; };
+                    };
+                    const C_diag = (nb) => {
+                        ruleLocked.add(nb);
+                        return (r, c) => {
+                            const pb = posMap.get(nb);
+                            if (!pb) return false;
+                            return Math.abs(r - pb.r) === 1 && Math.abs(c - pb.c) === 1;
+                        };
                     };
                     const C_corner = () => (r, c) => (r === 0 || r === R - 1) && (c === 0 || c === C - 1);
 
@@ -1893,7 +2189,7 @@
             // ============ 启动应用 ============
             new SeatAllocatorApp();
             console.log('iAxiom Placement System hyper version - Web Edition');
-            console.log('🔐 随机引擎: batch-256 crypto + 3轮 Fisher-Yates + uniqueRandomMatrix');
+            console.log('🔐 随机引擎: batch-256 crypto×时间熵 + 3轮 Fisher-Yates + uniqueRandomMatrix + 反重复修复(禁坐回最近4次座位/上次邻座)');
             console.log('📐 规则系统: 模式0-B (0不相邻|1距离|2固定|3行概率|4列排除|5行范围|6相邻|7同行|8异行|9角落|A左右|B斜角) · 同一人多规则=约束叠加');
             console.log('🎲 规则生效模式: 普通模式(日冷却) | 特殊模式(周冷却-无限制)');
         })();
