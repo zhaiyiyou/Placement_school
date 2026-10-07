@@ -869,7 +869,7 @@
                 <div class="title-bar-left">
                     <div class="app-icon">📐</div>
                     <span class="app-title">iAxiom Placement System</span>
-                    <span class="app-version">v9.4.1</span>
+                    <span class="app-version">v9.5.0</span>
                 </div>
                 <div class="title-bar-right">
                     <span class="mode-badge normal" id="modeBadge">普通模式</span>
@@ -1118,15 +1118,17 @@
 
             // ============ 反重复随机（避免每周坐回原位/邻座） ============
             const SEAT_HISTORY_KEY = 'iax_seat_history';   // 历次抽座记录（localStorage）
-            const SEAT_HISTORY_MAX = 12;                   // 最多保留的历史记录条数
+            const SEAT_HISTORY_MAX = 2;                    // 只记忆"上次"和"上上次"两张座位表
             // 座位历史随"导出座位表"一起写进 txt（应对还原卡/换电脑导致浏览器缓存丢失）
             const HISTORY_FILE_BEGIN = '=== iAxiom 座位历史缓存 开始（本段供程序读取，请勿修改或删除） ===';
             const HISTORY_FILE_END = '=== iAxiom 座位历史缓存 结束 ===';
             const ANTI_REPEAT = {
-                exactDraws: 4,      // 禁止坐回"最近 N 次抽座"中完全相同的座位
+                exactDraws: 2,      // 禁止坐回"上次/上上次"中完全相同的座位
                 nearRadius: 1,      // 上次座位周围一圈（|Δ行|≤1 且 |Δ列|≤1）尽量避免
-                maxIterations: 8000, // 修复迭代上限
-                partnerTries: 60    // 每次尝试交换的候选人数
+                maxIterations: 8000, // 硬冲突修复迭代上限
+                partnerTries: 60,   // 硬冲突修复时每次尝试交换的候选人数
+                renewIterations: 900, // "换邻居"优化迭代次数（让周围的人也和上次不同）
+                renewTries: 12      // "换邻居"优化时每次尝试交换的候选人数
             };
 
             // ============ 主应用类 ============
@@ -1677,7 +1679,7 @@
                     this._repeatGuard = this._buildRepeatGuard();
                     this._antiRepeatStats = this._applyAntiRepeat(this._repeatGuard);
                     if (this._repeatGuard) {
-                        this._log(`   ↳ 反重复修复：交换 ${this._antiRepeatStats.iterations} 次迭代 · 剩余 原位 ${this._antiRepeatStats.exact} / 邻座 ${this._antiRepeatStats.near}`);
+                        this._log(`   ↳ 反重复修复：硬冲突迭代 ${this._antiRepeatStats.iterations} 次 · 换邻居 ${this._antiRepeatStats.renew || 0} 次 · 剩余 原位 ${this._antiRepeatStats.exact} / 邻座 ${this._antiRepeatStats.near}`);
                     }
 
                     const seedForLog = getStrongSeed();
@@ -1796,26 +1798,19 @@
                 }
 
                 /**
-                 * 构建反重复参照：
-                 *  exact —— 最近 N 次抽座（优先取"非今天"的记录，保证跨周比较；再加上今天的预览记录）
-                 *  near  —— 上一次（跨周优先）座位的周围一圈
-                 *  refRow—— 上一次所在行（软约束：尽量避免整周同排）
+                 * 构建反重复参照（只记忆"上次"和"上上次"两张表）：
+                 *  exact    —— 上次、上上次坐过的完全相同座位
+                 *  near     —— 上次座位周围一圈的坐标
+                 *  refRow   —— 上次所在行（软约束：尽量避免整周同排）
+                 *  prevRing —— 上次坐在他周围一圈的同学（用于"换邻居"目标）
                  */
                 _buildRepeatGuard() {
                     const list = this._loadSeatHistory();
                     if (!list.length) return null;
-                    const midnight = new Date();
-                    midnight.setHours(0, 0, 0, 0);
-                    const midnightTs = midnight.getTime();
-                    const older = list.filter(e => e.ts < midnightTs);
-                    const todays = list.filter(e => e.ts >= midnightTs);
-
-                    const exactEntries = older.slice(0, ANTI_REPEAT.exactDraws);
-                    // 同一天内反复预览时，也避免生成一模一样的表
-                    for (const e of todays.slice(0, 2)) exactEntries.push(e);
+                    const entries = list.slice(0, ANTI_REPEAT.exactDraws);   // [上次, 上上次]
 
                     const exact = new Map();
-                    for (const entry of exactEntries) {
+                    for (const entry of entries) {
                         const seats = entry.seats || {};
                         for (const name in seats) {
                             if (!exact.has(name)) exact.set(name, new Set());
@@ -1823,39 +1818,126 @@
                         }
                     }
 
-                    const ref = older[0] || list[0];
+                    const refSeats = (entries[0] && entries[0].seats) || {};   // 上次
+                    const at = new Map();                                      // 'r,c' -> 姓名（上次）
+                    for (const name in refSeats) at.set(String(refSeats[name]), name);
+
                     const near = new Map();
                     const refRow = new Map();
-                    const refSeats = ref.seats || {};
+                    const prevRing = new Map();
                     for (const name in refSeats) {
                         const parts = String(refSeats[name]).split(',');
                         const r = parseInt(parts[0], 10), c = parseInt(parts[1], 10);
                         if (isNaN(r) || isNaN(c)) continue;
                         refRow.set(name, r);
                         const ring = new Set();
+                        const around = new Set();
                         for (let dr = -ANTI_REPEAT.nearRadius; dr <= ANTI_REPEAT.nearRadius; dr++) {
                             for (let dc = -ANTI_REPEAT.nearRadius; dc <= ANTI_REPEAT.nearRadius; dc++) {
                                 if (!dr && !dc) continue;
                                 const rr = r + dr, cc = c + dc;
-                                if (rr >= 0 && rr < 7 && cc >= 0 && cc < 8) ring.add(rr + ',' + cc);
+                                if (rr >= 0 && rr < 7 && cc >= 0 && cc < 8) {
+                                    ring.add(rr + ',' + cc);
+                                    const other = at.get(rr + ',' + cc);
+                                    if (other && other !== name) around.add(other);
+                                }
                             }
                         }
                         near.set(name, ring);
+                        prevRing.set(name, around);
                     }
-                    return { exact, near, refRow, hasHistory: true };
+                    return { exact, near, refRow, prevRing, hasHistory: true };
                 }
 
-                // 代价：坐回原座位(100) > 仍在邻座(20) > 与上次同排(1)
+                // 代价：坐回原座位(1000) > 仍在邻座(200) > 与上次同排(1) + 上次周围的人仍是邻居(每人 1)
                 _repeatCost(guard, name, r, c) {
                     if (!guard) return 0;
-                    const key = r + ',' + c;
                     let cost = 0;
                     const ex = guard.exact.get(name);
-                    if (ex && ex.has(key)) cost += 100;
+                    if (ex && ex.has(r + ',' + c)) cost += 1000;
                     const nr = guard.near.get(name);
-                    if (nr && nr.has(key)) cost += 20;
+                    if (nr && nr.has(r + ',' + c)) cost += 200;
                     if (guard.refRow.get(name) === r) cost += 1;
-                    return cost;
+                    return cost + this._neighborOverlap(guard, name, r, c);
+                }
+
+                // 上次坐在"他周围"的同学，现在还有几个仍在他周围
+                _neighborOverlap(guard, name, r, c) {
+                    const around = guard.prevRing && guard.prevRing.get(name);
+                    if (!around || !around.size) return 0;
+                    let k = 0;
+                    for (let dr = -1; dr <= 1; dr++) {
+                        for (let dc = -1; dc <= 1; dc++) {
+                            if (!dr && !dc) continue;
+                            const rr = r + dr, cc = c + dc;
+                            if (rr < 0 || rr >= 7 || cc < 0 || cc >= 8) continue;
+                            const other = this.ans[rr][cc];
+                            if (other && other !== ' ' && around.has(other)) k++;
+                        }
+                    }
+                    return k;
+                }
+
+                /**
+                 * 交换 a、b 座位后总代价的变化（负值=更好）
+                 * 硬冲突（原位/邻座）权重远大于"邻居重复"，因此不会为了换邻居而牺牲硬约束。
+                 */
+                _swapScoreDelta(guard, a, b, pos) {
+                    const pa = pos.get(a), pb = pos.get(b);
+                    if (!pa || !pb) return 0;
+                    const hard = (name, r, c) => {
+                        let cost = 0;
+                        const key = r + ',' + c;
+                        const ex = guard.exact.get(name);
+                        if (ex && ex.has(key)) cost += 1000;
+                        const nr = guard.near.get(name);
+                        if (nr && nr.has(key)) cost += 200;
+                        if (guard.refRow.get(name) === r) cost += 1;
+                        return cost;
+                    };
+                    const hardDelta = (hard(a, pb.r, pb.c) + hard(b, pa.r, pa.c)) - (hard(a, pa.r, pa.c) + hard(b, pb.r, pb.c));
+                    if (hardDelta > 0) return 1000;      // 不接受引入硬冲突
+                    return hardDelta + this._neighborSwapDelta(guard, a, b, pos);
+                }
+
+                // 试交换 a、b 后，"周围重复"总数的变化（交换后会自动还原）
+                _neighborSwapDelta(guard, a, b, pos) {
+                    if (!guard.prevRing || !guard.prevRing.size) return 0;
+                    const affected = new Set();
+                    const collect = (name) => {
+                        const p = pos.get(name);
+                        if (!p) return;
+                        affected.add(name);
+                        for (let dr = -1; dr <= 1; dr++) {
+                            for (let dc = -1; dc <= 1; dc++) {
+                                if (!dr && !dc) continue;
+                                const rr = p.r + dr, cc = p.c + dc;
+                                if (rr < 0 || rr >= 7 || cc < 0 || cc >= 8) continue;
+                                const o = this.ans[rr][cc];
+                                if (o && o !== ' ') affected.add(o);
+                            }
+                        }
+                    };
+                    const sum = () => {
+                        let s = 0;
+                        for (const n of affected) {
+                            const p = pos.get(n);
+                            if (p) s += this._neighborOverlap(guard, n, p.r, p.c);
+                        }
+                        return s;
+                    };
+                    collect(a); collect(b);
+                    const before = sum();
+                    const pa = pos.get(a), pb = pos.get(b);
+                    this.ans[pa.r][pa.c] = b; this.ans[pb.r][pb.c] = a;
+                    pos.set(a, { r: pb.r, c: pb.c });
+                    pos.set(b, { r: pa.r, c: pa.c });
+                    collect(a); collect(b);
+                    const after = sum();
+                    this.ans[pa.r][pa.c] = a; this.ans[pb.r][pb.c] = b;
+                    pos.set(a, { r: pa.r, c: pa.c });
+                    pos.set(b, { r: pb.r, c: pb.c });
+                    return after - before;
                 }
 
                 /**
@@ -1884,7 +1966,7 @@
                         costs.set(n, this._repeatCost(guard, n, p.r, p.c));
                     }
 
-                    const HARD = 20;   // 达到该代价视为需要修复（原位/邻座）
+                    const HARD = 200;   // 达到该代价视为需要修复（原位 1000 / 邻座 200）
                     let failures = 0;
                     let iter = 0;
                     for (; iter < ANTI_REPEAT.maxIterations; iter++) {
@@ -1919,34 +2001,67 @@
                             if (++failures > names.length * 2) break;
                         }
                     }
+
+                    // ── 第二阶段：换邻居 ──
+                    // 硬冲突清除后，继续做"只接受变好"的随机交换，让每个人周围的人也与上次不同。
+                    // 硬冲突权重远大于邻居重复，因此不会为了换邻居而把谁放回原位/邻座。
+                    let renew = 0;
+                    if (guard.prevRing && guard.prevRing.size) {
+                        for (let it = 0; it < ANTI_REPEAT.renewIterations; it++) {
+                            const a = names[Math.floor(cryptoRandom() * names.length)];
+                            if (isLocked(a)) continue;
+                            let bestB = null, bestDelta = 0;
+                            for (let t = 0; t < ANTI_REPEAT.renewTries; t++) {
+                                const b = names[Math.floor(cryptoRandom() * names.length)];
+                                if (b === a || isLocked(b)) continue;
+                                const delta = this._swapScoreDelta(guard, a, b, pos);
+                                if (delta < bestDelta) {
+                                    bestDelta = delta; bestB = b;
+                                    if (delta <= -4) break;
+                                }
+                            }
+                            if (bestB) {
+                                const pa = pos.get(a), pb = pos.get(bestB);
+                                const tmp = this.ans[pa.r][pa.c];
+                                this.ans[pa.r][pa.c] = this.ans[pb.r][pb.c];
+                                this.ans[pb.r][pb.c] = tmp;
+                                pos.set(a, { r: pb.r, c: pb.c });
+                                pos.set(bestB, { r: pa.r, c: pa.c });
+                                renew++;
+                            }
+                        }
+                    }
+
                     for (const n of names) {
                         const p = pos.get(n);
                         const cost = this._repeatCost(guard, n, p.r, p.c);
-                        if (cost >= 100) stats.exact++;
+                        if (cost >= 1000) stats.exact++;
                         else if (cost >= HARD) stats.near++;
-                        else if (cost >= 1) stats.rowsame++;
                     }
                     stats.iterations = iter;
+                    stats.renew = renew;
                     return stats;
                 }
 
-                // 生成后的自检文案（对比历史，说明本次是否还有重复/邻座）
+                // 生成后的自检文案（对比历史，说明本次是否还有重复/邻座/熟人扎堆）
                 _repeatCheckText() {
                     const guard = this._repeatGuard;
                     if (!guard) return '📌 反重复：首次运行，已建立本周基准座位（下周起自动避开旧座位与邻座）';
-                    let exact = 0, near = 0, rowsame = 0, checked = 0;
+                    let exact = 0, near = 0, around = 0, checked = 0;
                     for (let r = 0; r < 7; r++) {
                         for (let c = 0; c < 8; c++) {
                             const n = this.ans[r][c];
                             if (!n || n === ' ') continue;
                             checked++;
-                            const cost = this._repeatCost(guard, n, r, c);
-                            if (cost >= 100) exact++;
-                            else if (cost >= 20) near++;
-                            else if (cost >= 1) rowsame++;
+                            const key = r + ',' + c;
+                            const ex = guard.exact.get(n);
+                            const nr = guard.near.get(n);
+                            if (ex && ex.has(key)) exact++;
+                            else if (nr && nr.has(key)) near++;
+                            else if (this._neighborOverlap(guard, n, r, c) > 0) around++;
                         }
                     }
-                    return `📌 反重复检查（${checked} 人）：坐回原座位 ${exact} 人 · 仍在邻座 ${near} 人 · 同排 ${rowsame} 人`;
+                    return `📌 反重复检查（${checked} 人）：坐回原座位 ${exact} 人 · 仍在邻座 ${near} 人 · 周围同学与上次相同 ${around} 人`;
                 }
 
 

@@ -164,6 +164,34 @@ def apply_correct_rules(ans, rules):
             return r == pos[0] and (c ^ 1) == pos[1]
         return fn
 
+    def c_col_range(sc, ec):
+        return lambda r, c: sc <= c <= ec
+
+    def build_fixed_seats():
+        fs = {}
+        for other in rules:
+            if other[0] == '2' and len(other) == 4:
+                fs[other[1]] = (int(other[2]), int(other[3]))
+        return fs
+
+    def occupant_blocked(occ, tr, tc, fixed_seats):
+        """目标座位上的同学是否不可被换走"""
+        if not occ or occ == ' ':
+            return False
+        if occ in fixed_seats and fixed_seats[occ] == (tr, tc):
+            return True
+        if occ in protected_by_rule3 or occ in protected_by_distance or occ in constraints:
+            return True
+        return False
+
+    def move_to(name, tr, tc, pos):
+        """把 name 移到 (tr,tc)（与占位者交换）"""
+        occ = ans[tr][tc]
+        ans[tr][tc] = name
+        ans[pos[0]][pos[1]] = occ if occ and occ != name else ' '
+        protected_by_distance.add(name)
+        return True
+
     for rule in rules:
         if len(rule) < 3 or len(rule) > 6:
             continue
@@ -308,6 +336,86 @@ def apply_correct_rules(ans, rules):
                 add_constraint(name1, c_diag(name2))
             continue
 
+        # 模式 '5'：行范围（1 基闭区间）  5 姓名 行起 行止 [概率]
+        if mode_id == '5':
+            if len(rule) != 4 and len(rule) != 5:
+                continue
+            name = rule[1]
+            rs = int(rule[2]) - 1
+            re = int(rule[3]) - 1
+            prob_val = int(rule[4]) if len(rule) == 5 else 100
+            if rs < 0 or re >= rows or rs > re or prob_val < 0 or prob_val > 100:
+                continue
+            if crypto_random() * 100 >= prob_val:
+                continue
+            pos = _find_seat(ans, name)
+            if pos is None:
+                continue
+            fixed_seats = build_fixed_seats()
+            if name in fixed_seats:
+                continue
+            if rs <= pos[0] <= re:
+                add_constraint(name, c_row_band(rs, re))
+                continue
+            candidates = []
+            for r in range(rs, re + 1):
+                for c in range(cols):
+                    if r == pos[0] and c == pos[1]:
+                        continue
+                    if not pass_constraints(name, r, c):
+                        continue
+                    if occupant_blocked(ans[r][c], r, c, fixed_seats):
+                        continue
+                    candidates.append((r, c))
+            if candidates:
+                tr, tc = candidates[math.floor(crypto_random() * len(candidates))]
+                move_to(name, tr, tc, pos)
+                add_constraint(name, c_row_band(rs, re))
+            continue
+
+        # 模式 'A'：左右偏好（L=左半 列1~4，R=右半 列5~8）  A 姓名 [L|R] [概率]
+        if mode_id == 'A':
+            if len(rule) != 3 and len(rule) != 4:
+                continue
+            name = rule[1]
+            side = rule[2] if rule[2] in ('L', 'R') else None
+            if side and len(rule) == 4:
+                prob_val = int(rule[3])
+            elif side is None and len(rule) == 3:
+                prob_val = int(rule[2])
+            else:
+                prob_val = 100
+            if prob_val < 0 or prob_val > 100:
+                continue
+            if crypto_random() * 100 >= prob_val:
+                continue
+            pos = _find_seat(ans, name)
+            if pos is None:
+                continue
+            fixed_seats = build_fixed_seats()
+            if name in fixed_seats:
+                continue
+            if side:
+                sc, ec = (0, cols // 2 - 1) if side == 'L' else (cols // 2, cols - 1)
+                if sc <= pos[1] <= ec:
+                    add_constraint(name, c_col_range(sc, ec))
+                    continue
+                candidates = []
+                for r in range(rows):
+                    for c in range(sc, ec + 1):
+                        if r == pos[0] and c == pos[1]:
+                            continue
+                        if not pass_constraints(name, r, c):
+                            continue
+                        if occupant_blocked(ans[r][c], r, c, fixed_seats):
+                            continue
+                        candidates.append((r, c))
+                if candidates:
+                    tr, tc = candidates[math.floor(crypto_random() * len(candidates))]
+                    move_to(name, tr, tc, pos)
+                    add_constraint(name, c_col_range(sc, ec))
+            continue
+
         # 模式 '0' / '1'（只写两个名字）：必须同桌
         # 每两列一张课桌（0 基配对 (0,1)(2,3)(4,5)(6,7)），c ^ 1 为同桌列
         # 依次尝试：① 甲坐过去 ② 乙坐过来 ③ 另找一张空桌两人一起搬过去
@@ -365,8 +473,8 @@ def apply_correct_rules(ans, rules):
                     j = math.floor(crypto_random() * (i + 1))
                     desks[i], desks[j] = desks[j], desks[i]
                 for dr, dc in desks:
-                    for ma, ta, mb, tb in (((name1, (dr, dc)), (name2, (dr, dc + 1))),
-                                           ((name1, (dr, dc + 1)), (name2, (dr, dc)))):
+                    for (ma, ta), (mb, tb) in (((name1, (dr, dc)), (name2, (dr, dc + 1))),
+                                               ((name1, (dr, dc + 1)), (name2, (dr, dc)))):
                         occs = [ans[ta[0]][ta[1]], ans[tb[0]][tb[1]]]
                         ok_occ = True
                         for occ in occs:
@@ -659,6 +767,11 @@ def generate_html(path, students, rules, sorted_pairs,
                 rules_desc.append(f"不相邻: {r[1]}-{r[2]}")
         elif r[0] == 'B':
             rules_desc.append(f"斜角: {r[1]}-{r[2]}")
+        elif r[0] == '5':
+            rules_desc.append(f"行范围: {r[1]} 第{r[2]}-{r[3]}行")
+        elif r[0] == 'A':
+            side = r[2] if len(r) > 2 and r[2] in ('L', 'R') else None
+            rules_desc.append(f"左右: {r[1]} {'左半' if side == 'L' else '右半' if side == 'R' else '随机'}")
 
     # 准备 pair 数据
     all_pairs_data = []
