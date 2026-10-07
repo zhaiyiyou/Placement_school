@@ -869,7 +869,7 @@
                 <div class="title-bar-left">
                     <div class="app-icon">📐</div>
                     <span class="app-title">iAxiom Placement System</span>
-                    <span class="app-version">v9.5.1</span>
+                    <span class="app-version">v9.5.2</span>
                 </div>
                 <div class="title-bar-right">
                     <span class="mode-badge normal" id="modeBadge">普通模式</span>
@@ -1743,6 +1743,46 @@
                     return added;
                 }
 
+                /**
+                 * 兼容"最早版本"导出的座位表（那时还没有缓存段，文件里只有座位表正文）：
+                 * 从正文中解析 7 行 × 8 列的姓名网格，作为一条历史记录导入。
+                 * @returns {number} 新增条数；-1 表示无法解析
+                 */
+                _importLegacySeatTable(text) {
+                    if (!text) return -1;
+                    const lines = text.split(/\r?\n/);
+                    // 生成时间（旧文件格式：生成时间: 2026/1/5 14:30:00）
+                    let ts = Date.now();
+                    const tm = text.match(/生成时间[:：]\s*(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+                    if (tm) {
+                        const d = new Date(+tm[1], +tm[2] - 1, +tm[3], +tm[4], +tm[5], +(tm[6] || 0));
+                        if (!isNaN(d.getTime())) ts = d.getTime();
+                    }
+                    const seats = {};
+                    let row = 0;
+                    for (const line of lines) {
+                        const raw = line.replace(/\s+$/, '');
+                        if (!raw.trim()) continue;
+                        const cells = raw.includes('\t') ? raw.split('\t') : raw.trim().split(/\s{2,}/);
+                        if (cells.length !== 8) continue;                     // 座位行必须正好 8 列
+                        const names = cells.map(s => s.trim());
+                        if (names.some(n => n && (/[=:：]/.test(n) || n.length > 8 || /^\d+$/.test(n)))) continue;
+                        for (let c = 0; c < 8; c++) {
+                            if (names[c] && names[c] !== ' ' && names[c] !== '-') seats[names[c]] = row + ',' + c;
+                        }
+                        row++;
+                        if (row >= 7) break;
+                    }
+                    if (row !== 7 || Object.keys(seats).length < 8) return -1;   // 不像一张完整座位表
+                    const list = this._loadSeatHistory();
+                    const key = String(ts) + '|' + JSON.stringify(seats);
+                    if (list.some(x => String(x.ts) + '|' + JSON.stringify(x.seats || {}) === key)) return 0;
+                    list.push({ ts, seats });
+                    list.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+                    this._saveSeatHistory(list);
+                    return 1;
+                }
+
                 // "读取缓存"按钮：选择导出的座位表 txt，还原反重复历史
                 _handleLoadHistoryClick() {
                     this.historyFileInput.value = '';
@@ -1755,14 +1795,20 @@
                     this._setStatus('正在读取缓存...', 'busy');
                     try {
                         const text = await this._readFileAsText(file);
-                        const added = this._importHistoryText(text);
+                        let added = this._importHistoryText(text);
+                        let legacy = false;
                         if (added < 0) {
-                            this._log('⚠️ 该文件中没有座位历史缓存段，请使用本系统"导出座位表"生成的 txt');
+                            // 兜底：兼容"最早版本"导出的、只有座位表正文的文件
+                            added = this._importLegacySeatTable(text);
+                            legacy = true;
+                        }
+                        if (added < 0) {
+                            this._log('⚠️ 该文件中既没有座位历史缓存段，也解析不出座位表，请使用本系统"导出座位表"生成的 txt');
                             this._setStatus('缓存读取失败', 'error');
                             return;
                         }
                         const total = this._loadSeatHistory().length;
-                        this._log(`📂 已读取座位历史：新增 ${added} 条，当前共 ${total} 条（反重复已生效）`);
+                        this._log(`📂 已读取座位历史${legacy ? '（旧版文件：由座位表正文解析）' : ''}：新增 ${added} 条，当前共 ${total} 条（反重复已生效）`);
                         this._setStatus('缓存读取完成', 'active');
                     } catch (e) {
                         this._log(`缓存读取失败: ${e.message}`);
