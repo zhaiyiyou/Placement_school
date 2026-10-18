@@ -869,7 +869,7 @@
                 <div class="title-bar-left">
                     <div class="app-icon">📐</div>
                     <span class="app-title">iAxiom Placement System</span>
-                    <span class="app-version">v9.5.2</span>
+                    <span class="app-version">v9.6.0</span>
                 </div>
                 <div class="title-bar-right">
                     <span class="mode-badge normal" id="modeBadge">普通模式</span>
@@ -1131,6 +1131,20 @@
                 renewTries: 12,     // "换邻居"优化时每次尝试交换的候选人数
                 plateauChance: 0.25 // 找不到更优交换时，接受"等代价"交换的概率（跳出局部最优）
             };
+
+            // ============ 规则参数关键字（模式 B 斜角的细化选项） ============
+            // 值：'F' 甲在乙前方（行号小，靠讲台）| 'K' 甲在乙后方 | null 不限
+            const DIAG_DIR_TOKENS = new Map([
+                ['前', 'F'], ['前方', 'F'], ['前边', 'F'], ['前面', 'F'], ['F', 'F'], ['f', 'F'],
+                ['后', 'K'], ['后方', 'K'], ['后边', 'K'], ['后面', 'K'], ['K', 'K'], ['k', 'K'],
+                ['任', null], ['任意', null], ['不限', null], ['-', null], ['*', null]
+            ]);
+            // 值：'S' 同一张课桌内（不跨过道）| 'X' 必须跨过道 | null 不限
+            const DIAG_AISLE_TOKENS = new Map([
+                ['同', 'S'], ['桌内', 'S'], ['内', 'S'], ['不跨', 'S'], ['不跨过道', 'S'], ['S', 'S'], ['s', 'S'],
+                ['跨', 'X'], ['过道', 'X'], ['过', 'X'], ['跨过道', 'X'], ['隔', 'X'], ['X', 'X'], ['x', 'X'],
+                ['任', null], ['任意', null], ['不限', null], ['-', null], ['*', null]
+            ]);
 
             // ============ 主应用类 ============
             class SeatAllocatorApp {
@@ -2289,31 +2303,53 @@
                         ruleLocked.add(nb);
                         return (r, c) => { const pb = posMap.get(nb); return !!pb && pb.r !== r; };
                     };
-                    const C_diag = (nb) => {
+                    // 斜角（甲相对乙）：|Δ行|=1 且 |Δ列|=1
+                    //   dir   : 'F' 甲在乙前方（行号小，靠讲台）| 'K' 甲在乙后方（行号大）| null 不限
+                    //   aisle : 'S' 甲与乙在同一张课桌里（不跨过道）| 'X' 必须跨过道 | null 不限
+                    // 同一张桌 = 列组相同（每两列一桌，c >> 1 相同），斜角跨不跨过道正好由它区分。
+                    // 纯位置判据（不读 posMap），便于"先把乙摆到某处再验证甲"。
+                    const diagMatch = (r, c, pr, pc, dir, aisle) => {
+                        const dr = r - pr, dc = c - pc;
+                        if (dr !== 1 && dr !== -1) return false;
+                        if (dc !== 1 && dc !== -1) return false;
+                        if (dir === 'F' && dr !== -1) return false;
+                        if (dir === 'K' && dr !== 1) return false;
+                        if (aisle) {
+                            const sameDesk = (c >> 1) === (pc >> 1);
+                            if (aisle === 'S' ? !sameDesk : sameDesk) return false;
+                        }
+                        return true;
+                    };
+                    const C_diag = (nb, dir, aisle) => {
                         ruleLocked.add(nb);
                         return (r, c) => {
                             const pb = posMap.get(nb);
-                            if (!pb) return false;
-                            return Math.abs(r - pb.r) === 1 && Math.abs(c - pb.c) === 1;
+                            return !!pb && diagMatch(r, c, pb.r, pb.c, dir, aisle);
                         };
                     };
+                    const flipDiagDir = (dir) => (dir === 'F' ? 'K' : dir === 'K' ? 'F' : dir);
                     const C_corner = () => (r, c) => (r === 0 || r === R - 1) && (c === 0 || c === C - 1);
                     // 同桌：同一行，且两列属于同一张课桌（每两列一桌，中间是过道）
                     // 0 基列号配对为 (0,1) (2,3) (4,5) (6,7)，即 c ^ 1 是同桌列
+                    // fn.deskPartner 记录"和谁同桌"，模式 B 的 ③b（整桌搬迁）靠它识别"被同桌规则钉死"
                     const C_desk = (nb) => {
                         ruleLocked.add(nb);
-                        return (r, c) => {
+                        const fn = (r, c) => {
                             const pb = posMap.get(nb);
                             if (!pb) return false;
                             return r === pb.r && (c ^ 1) === pb.c;
                         };
+                        fn.deskPartner = nb;
+                        return fn;
                     };
 
                     // 双人关系（距离/相邻/同行/异行/斜角）都是对称的：约束同时登记给双方，
                     // 这样后一条规则移动"另一个人"时也不会破坏前一对关系。
+                    // makeFn(对方姓名, 是否反向)：对称关系忽略第二参数；有方向的斜角用它把
+                    // "前/后"取反（甲要在乙前方 ⟺ 乙要在甲后方）。
                     const addPairConstraint = (a, b, makeFn) => {
-                        addConstraint(a, makeFn(b));
-                        addConstraint(b, makeFn(a));
+                        addConstraint(a, makeFn(b, false));
+                        addConstraint(b, makeFn(a, true));
                     };
 
                     for (const rule of this.rules) {
@@ -2476,7 +2512,9 @@
                             const corners = [{ r: 0, c: 0 }, { r: 0, c: C - 1 }, { r: R - 1, c: 0 }, { r: R - 1, c: C - 1 }];
                             const isCorner = corners.some(k => k.r === pos.r && k.c === pos.c);
                             if (isCorner) { addConstraint(name, C_corner()); continue; }
-                            const avail = this._tryCollectAvailable(corners, name, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
+                            // 同样要服从此人已登记的约束（否则会把前一条规则摆好的人又挪坏）
+                            const cornerCands = corners.filter(k => passConstraints(name, k.r, k.c));
+                            const avail = this._tryCollectAvailable(cornerCands, name, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
                             if (this._pickAndSwap(avail, pos.r, pos.c, posMap, protectedByDistance)) addConstraint(name, C_corner());
                             continue;
                         }
@@ -2506,23 +2544,153 @@
                             continue;
                         }
 
-                        // === 模式 'B'：斜角 (B name1 name2 [prob%]) 甲必在乙的斜对角4格之一 ===
+                        // === 模式 'B'：斜角 (B 甲 乙 [前|后] [同|跨] [prob%]) ===
+                        // 甲必须坐在乙的斜对角 4 格之一，可再细指定：
+                        //   前 / 后 —— 甲在乙的前一排（行号小、靠讲台）还是后一排；
+                        //   同 / 跨 —— 甲与乙是否在同一条过道两侧：
+                        //              同 = 同一张课桌里（前后桌斜角，不跨过道，4 格中去掉 2 格）
+                        //              跨 = 必须跨过道（另一张课桌的斜角）
+                        // 两个选项都可省略（= 不限），顺序任意，"任/任意/-" 显式表示不限，概率可写任意位置。
                         if (modeId === 'B') {
-                            if (rule.length !== 3 && rule.length !== 4) continue;
+                            if (rule.length < 3 || rule.length > 6) continue;
                             const n1 = rule[1], n2 = rule[2];
-                            let probVal = rule.length === 4 ? parseInt(rule[3]) : 100;
+                            let dir = null, aisle = null, probVal = 100, badToken = false;
+                            for (let i = 3; i < rule.length; i++) {
+                                const tok = rule[i];
+                                if (/^\d+$/.test(tok)) { probVal = parseInt(tok); continue; }
+                                if (DIAG_DIR_TOKENS.has(tok)) { dir = DIAG_DIR_TOKENS.get(tok); continue; }
+                                if (DIAG_AISLE_TOKENS.has(tok)) { aisle = DIAG_AISLE_TOKENS.get(tok); continue; }
+                                badToken = true;
+                                break;
+                            }
+                            if (badToken) continue;
                             if (n1 === n2 || isNaN(probVal) || probVal < 0 || probVal > 100 || rng() * 100 >= probVal) continue;
                             const p1 = posMap.get(n1), p2 = posMap.get(n2);
-                            if (!p1 || !p2 || fixedSeats.has(n1)) continue;
-                            const satisfied = (Math.abs(p1.r - p2.r) === 1 && Math.abs(p1.c - p2.c) === 1);
-                            if (satisfied) { addPairConstraint(n1, n2, (x) => C_diag(x)); continue; }
-                            const cands = [];
-                            for (let rr = Math.max(0, p2.r - 1); rr <= Math.min(R - 1, p2.r + 1); rr++)
-                                for (let cc = Math.max(0, p2.c - 1); cc <= Math.min(C - 1, p2.c + 1); cc++)
-                                    if (Math.abs(rr - p2.r) === 1 && Math.abs(cc - p2.c) === 1 && passConstraints(n1, rr, cc))
-                                        cands.push({ r: rr, c: cc });
-                            const avail = this._tryCollectAvailable(cands, n1, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
-                            if (this._pickAndSwap(avail, p1.r, p1.c, posMap, protectedByDistance)) addPairConstraint(n1, n2, (x) => C_diag(x));
+                            if (!p1 || !p2) continue;
+                            // 甲被固定时不动甲，但仍可以移动乙来满足这段关系（②/③ 会接手）
+                            const aLocked = fixedSeats.has(n1);
+                            // 甲相对乙的判据；乙相对甲时方向取反（前/后互换），过道要求不变
+                            const makeDiag = (other, rev) => C_diag(other, rev ? flipDiagDir(dir) : dir, aisle);
+                            if (diagMatch(p1.r, p1.c, p2.r, p2.c, dir, aisle)) { addPairConstraint(n1, n2, makeDiag); continue; }
+                            // 以 (pr,pc) 为乙的位置、取甲的斜角候选格（同时不违反甲已有约束）
+                            const diagCells = (pr, pc, d, mover) => {
+                                const list = [];
+                                for (let rr = pr - 1; rr <= pr + 1; rr += 2)
+                                    for (let cc = pc - 1; cc <= pc + 1; cc += 2)
+                                        if (rr >= 0 && rr < R && cc >= 0 && cc < C && diagMatch(rr, cc, pr, pc, d, aisle) && passConstraints(mover, rr, cc))
+                                            list.push({ r: rr, c: cc });
+                                return list;
+                            };
+                            // ① 把甲挪到乙的斜角位（甲被固定时跳过这一步）
+                            let done = false;
+                            if (!aLocked) {
+                                const avail1 = this._tryCollectAvailable(diagCells(p2.r, p2.c, dir, n1), n1, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
+                                if (this._pickAndSwap(avail1, p1.r, p1.c, posMap, protectedByDistance)) done = true;
+                            }
+                            // ② 指定更细时候选格可能只剩 1 个、又被别人占着：改成把乙摆到甲的反向斜角位
+                            if (!done && !fixedSeats.has(n2)) {
+                                const avail2 = this._tryCollectAvailable(diagCells(p1.r, p1.c, flipDiagDir(dir), n2), n2, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
+                                if (this._pickAndSwap(avail2, p2.r, p2.c, posMap, protectedByDistance)) done = true;
+                            }
+                            // ③ / ③b：整体搬迁（乙在讲台那一排/最后一排时"前方/后方"根本不存在）
+                            if (!done && !fixedSeats.has(n1) && !fixedSeats.has(n2)) {
+                                const samePos = (a, b) => !!a && !!b && a.r === b.r && a.c === b.c;
+                                const canTake = (occ) => !occ || occ === ' ' || occ === n1 || occ === n2 ||
+                                    (!ruleLocked.has(occ) && !protectedByRule3.has(occ) && !protectedByDistance.has(occ) && !fixedSeats.has(occ));
+                                const shuffleList = (list) => {
+                                    for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
+                                    return list;
+                                };
+                                // ③ 给乙另找一个座位，再把甲摆到它的斜角位
+                                //    （甲的落点允许正好是乙的旧座位：先挪甲时乙会被换到甲原位，随后再挪乙，位置由 posMap 跟踪）
+                                const allSeats = [];
+                                for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) allSeats.push({ r, c });
+                                const combos = [];
+                                for (const tb of shuffleList(allSeats)) {
+                                    if (samePos(tb, p2)) continue;   // 乙原地不动的情况 ① 已试过
+                                    if (!passConstraints(n2, tb.r, tb.c) || !canTake(this.ans[tb.r][tb.c])) continue;
+                                    for (const ta of diagCells(tb.r, tb.c, dir, n1)) {
+                                        if (!canTake(this.ans[ta.r][ta.c])) continue;
+                                        combos.push({ ta, tb });
+                                        break;
+                                    }
+                                    if (combos.length >= 40) break;
+                                }
+                                let pool = combos;
+                                if (this._repeatGuard && combos.length > 1) {
+                                    const pref = combos.filter(k => this._repeatCost(this._repeatGuard, n1, k.ta.r, k.ta.c)
+                                        + this._repeatCost(this._repeatGuard, n2, k.tb.r, k.tb.c) < 40);
+                                    if (pref.length) pool = pref;
+                                }
+                                if (pool.length) {
+                                    const pick = pool[Math.floor(rng() * pool.length)];
+                                    this._moveSeat(n1, pick.ta, posMap);
+                                    this._moveSeat(n2, pick.tb, posMap);
+                                    protectedByDistance.add(n1);
+                                    protectedByDistance.add(n2);
+                                    done = true;
+                                }
+                                // ③b 乙被"同桌规则"钉死（只能待在自己的桌上）时：连桌子一起换
+                                //    —— 先把同桌挪到目标桌的另一侧，乙跟着过去，再把甲摆到斜角位
+                                if (!done) {
+                                    const pp = { r: p2.r, c: p2.c ^ 1 };
+                                    const partner = this.ans[pp.r][pp.c];
+                                    // 只在乙真的被"同桌规则"钉在这张桌子上时才整桌搬迁
+                                    const deskPinned = (constraintMap.get(n2) || []).some(f => f && f.deskPartner === partner);
+                                    if (deskPinned && partner !== ' ' && partner !== n1 && !fixedSeats.has(partner)) {
+                                        const side = p2.c & 1;
+                                        const desks = [];
+                                        for (let r = 0; r < R; r++) for (let c = 0; c < C; c += 2) desks.push({ r, c });
+                                        const combos2 = [];
+                                        for (const d of shuffleList(desks)) {
+                                            const nb = { r: d.r, c: d.c + side };
+                                            const np = { r: d.r, c: d.c + (1 - side) };
+                                            if (samePos(nb, p1) || samePos(np, p1) || samePos(nb, p2) || samePos(np, p2) || samePos(np, pp)) continue;
+                                            // 虚拟地把两人都放到目标桌，检查双方的全部约束（同桌约束是双向登记的）
+                                            const oldB = posMap.get(n2), oldPartner = posMap.get(partner);
+                                            posMap.set(partner, np);
+                                            posMap.set(n2, nb);
+                                            const okBoth = passConstraints(partner, np.r, np.c) && passConstraints(n2, nb.r, nb.c);
+                                            posMap.set(partner, oldPartner);
+                                            posMap.set(n2, oldB);
+                                            if (!okBoth) continue;
+                                            if (!canTake(this.ans[np.r][np.c]) || !canTake(this.ans[nb.r][nb.c])) continue;
+                                            for (const ta of diagCells(nb.r, nb.c, dir, n1)) {
+                                                if (samePos(ta, p1) || samePos(ta, p2) || samePos(ta, pp) || samePos(ta, nb) || samePos(ta, np)) continue;
+                                                if (!canTake(this.ans[ta.r][ta.c])) continue;
+                                                combos2.push({ ta, nb, np, partner });
+                                                break;
+                                            }
+                                            if (combos2.length >= 30) break;
+                                        }
+                                        if (combos2.length) {
+                                            let pool2 = combos2;
+                                            if (this._repeatGuard && combos2.length > 1) {
+                                                const pref = combos2.filter(k =>
+                                                    this._repeatCost(this._repeatGuard, n1, k.ta.r, k.ta.c)
+                                                    + this._repeatCost(this._repeatGuard, n2, k.nb.r, k.nb.c)
+                                                    + this._repeatCost(this._repeatGuard, k.partner, k.np.r, k.np.c) < 60);
+                                                if (pref.length) pool2 = pref;
+                                            }
+                                            const pick = pool2[Math.floor(rng() * pool2.length)];
+                                            this._moveSeat(pick.partner, pick.np, posMap);
+                                            this._moveSeat(n2, pick.nb, posMap);
+                                            this._moveSeat(n1, pick.ta, posMap);
+                                            if (passConstraints(n1, pick.ta.r, pick.ta.c) && passConstraints(n2, pick.nb.r, pick.nb.c)) {
+                                                protectedByDistance.add(n1);
+                                                protectedByDistance.add(n2);
+                                                done = true;
+                                            } else {
+                                                // 极端情况下（被搬迁者之间存在约束引用）回滚，保持原状
+                                                this._moveSeat(n1, p1, posMap);
+                                                this._moveSeat(n2, p2, posMap);
+                                                this._moveSeat(pick.partner, pp, posMap);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if (done) addPairConstraint(n1, n2, makeDiag);
                             continue;
                         }
 

@@ -19,6 +19,40 @@ import time
 ROWS = 7
 COLS = 8
 
+# 模式 B（斜角）的细化选项关键字，与网页版 index.html 完全一致
+#   方向：'F' 甲在乙前方（行号小，靠讲台）| 'K' 甲在乙后方 | None 不限
+#   过道：'S' 同一张课桌内（不跨过道）| 'X' 必须跨过道 | None 不限
+DIAG_DIR_TOKENS = {
+    '前': 'F', '前方': 'F', '前边': 'F', '前面': 'F', 'F': 'F', 'f': 'F',
+    '后': 'K', '后方': 'K', '后边': 'K', '后面': 'K', 'K': 'K', 'k': 'K',
+    '任': None, '任意': None, '不限': None, '-': None, '*': None,
+}
+DIAG_AISLE_TOKENS = {
+    '同': 'S', '桌内': 'S', '内': 'S', '不跨': 'S', '不跨过道': 'S', 'S': 'S', 's': 'S',
+    '跨': 'X', '过道': 'X', '过': 'X', '跨过道': 'X', '隔': 'X', 'X': 'X', 'x': 'X',
+    '任': None, '任意': None, '不限': None, '-': None, '*': None,
+}
+
+
+def parse_diag_options(tokens):
+    """解析模式 B 的可选参数（方向/过道/概率），顺序任意。
+
+    返回 (dir, aisle, prob)；遇到不认识的关键字返回 None（该条规则静默跳过）。
+    """
+    dir_opt = None
+    aisle_opt = None
+    prob = 100
+    for tok in tokens:
+        if tok.isdigit():
+            prob = int(tok)
+        elif tok in DIAG_DIR_TOKENS:
+            dir_opt = DIAG_DIR_TOKENS[tok]
+        elif tok in DIAG_AISLE_TOKENS:
+            aisle_opt = DIAG_AISLE_TOKENS[tok]
+        else:
+            return None
+    return dir_opt, aisle_opt, prob
+
 # ===== 可调参数 =====
 NUM_PERMUTATIONS = 100       # 枚举的排列数
 SEATS_PER_PERM = 50          # 每种排列生成座位数
@@ -66,6 +100,36 @@ def read_students(filepath):
 
 def write_students(filepath, students):
     filepath.write_text(' '.join(students), encoding='utf-8')
+
+
+def diag_match(r, c, pr, pc, dir_opt=None, aisle=None):
+    """斜角位置判据（纯位置，不查座位表）：甲在 (r,c)、乙在 (pr,pc)
+
+    dir_opt: 'F' 甲在乙前方（行号小）/ 'K' 甲在乙后方 / None 不限
+    aisle:   'S' 同一张课桌（不跨过道）/ 'X' 必须跨过道 / None 不限
+    """
+    dr, dc = r - pr, c - pc
+    if dr not in (1, -1) or dc not in (1, -1):
+        return False
+    if dir_opt == 'F' and dr != -1:
+        return False
+    if dir_opt == 'K' and dr != 1:
+        return False
+    if aisle:
+        same_desk = (c >> 1) == (pc >> 1)
+        if aisle == 'S' and not same_desk:
+            return False
+        if aisle == 'X' and same_desk:
+            return False
+    return True
+
+
+def flip_diag_dir(dir_opt):
+    if dir_opt == 'F':
+        return 'K'
+    if dir_opt == 'K':
+        return 'F'
+    return dir_opt
 
 
 def parse_rules(filepath):
@@ -147,12 +211,13 @@ def apply_correct_rules(ans, rules):
     def c_row_band(rs, re):
         return lambda r, c: rs <= r <= re
 
-    def c_diag(name_b):
+    def c_diag(name_b, dir_opt=None, aisle=None):
+        """斜角约束（甲相对乙）"""
         def fn(r, c):
             pos = _find_seat(ans, name_b)
             if pos is None:
                 return False
-            return abs(r - pos[0]) == 1 and abs(c - pos[1]) == 1
+            return diag_match(r, c, pos[0], pos[1], dir_opt, aisle)
         return fn
 
     def c_desk(name_b):
@@ -162,6 +227,7 @@ def apply_correct_rules(ans, rules):
             if pos is None:
                 return False
             return r == pos[0] and (c ^ 1) == pos[1]
+        fn.desk_partner = name_b  # 供模式 B 的 ③b 识别"被同桌规则钉死"
         return fn
 
     def c_col_range(sc, ec):
@@ -191,6 +257,17 @@ def apply_correct_rules(ans, rules):
         ans[pos[0]][pos[1]] = occ if occ and occ != name else ' '
         protected_by_distance.add(name)
         return True
+
+    def swap_seats(a, b):
+        """交换两个座位上的同学（含空位；同一格时为无操作）"""
+        ans[a[0]][a[1]], ans[b[0]][b[1]] = ans[b[0]][b[1]], ans[a[0]][a[1]]
+
+    def move_student(name, target):
+        """把 name 从其当前座位换到 target（与占位者交换；按当前实际位置定位，抵消中途被挤走的情况）"""
+        cur = _find_seat(ans, name)
+        if cur is None or cur == target:
+            return
+        swap_seats(cur, target)
 
     for rule in rules:
         if len(rule) < 3 or len(rule) > 6:
@@ -271,12 +348,15 @@ def apply_correct_rules(ans, rules):
                 add_constraint(name, c_row_band(4, 6))
             continue
 
-        # B: 斜角（甲必在乙的斜对角 4 格之一）
+        # B: 斜角（甲必在乙的斜对角 4 格之一；可细指定 前/后、同/跨）
         if mode_id == 'B':
-            if len(rule) != 3 and len(rule) != 4:
+            if len(rule) < 3 or len(rule) > 6:
                 continue
             name1, name2 = rule[1], rule[2]
-            prob_val = int(rule[3]) if len(rule) == 4 else 100
+            parsed = parse_diag_options(rule[3:])
+            if parsed is None:
+                continue
+            dir_opt, aisle_opt, prob_val = parsed
             if name1 == name2:
                 continue
             if prob_val < 0 or prob_val > 100:
@@ -294,46 +374,153 @@ def apply_correct_rules(ans, rules):
                     fr = int(other[2])
                     fc = int(other[3])
                     fixed_seats[n] = (fr, fc)
-            if name1 in fixed_seats:
+            if name1 in fixed_seats and name2 in fixed_seats:
                 continue
             r1, c1 = pos1
             r2, c2 = pos2
-            if abs(r1 - r2) == 1 and abs(c1 - c2) == 1:
-                add_constraint(name1, c_diag(name2))
+            if diag_match(r1, c1, r2, c2, dir_opt, aisle_opt):
+                add_constraint(name1, c_diag(name2, dir_opt, aisle_opt))
+                add_constraint(name2, c_diag(name1, flip_diag_dir(dir_opt), aisle_opt))
                 continue
-            candidates = []
-            for dr in (-1, 1):
-                for dc in (-1, 1):
-                    rr, cc = r2 + dr, c2 + dc
-                    if 0 <= rr < rows and 0 <= cc < cols and pass_constraints(name1, rr, cc):
-                        candidates.append((rr, cc))
-            available = []
-            already_ok = False
-            for tr, tc in candidates:
+
+            def diag_cells(center, d, mover):
+                """以 center 为乙的位置时，甲的斜角候选格（且不违反 mover 已有约束）"""
+                cells = []
+                for dr in (-1, 1):
+                    for dc in (-1, 1):
+                        rr, cc = center[0] + dr, center[1] + dc
+                        if not (0 <= rr < rows and 0 <= cc < cols):
+                            continue
+                        if not diag_match(rr, cc, center[0], center[1], d, aisle_opt):
+                            continue
+                        if not pass_constraints(mover, rr, cc):
+                            continue
+                        cells.append((rr, cc))
+                return cells
+
+            def take_seat(mover, cur, cells):
+                """把 mover 换到 cells 中随机一个可用的座位；成功返回 True"""
+                available = []
+                for tr, tc in cells:
+                    occ = ans[tr][tc]
+                    if occ == mover:
+                        return False
+                    conflict = False
+                    if occ and occ != ' ':
+                        if occ in fixed_seats and fixed_seats[occ] == (tr, tc):
+                            conflict = True
+                        if occ in protected_by_rule3 or occ in protected_by_distance or occ in constraints:
+                            conflict = True
+                    if not conflict:
+                        available.append((tr, tc))
+                if not available:
+                    return False
+                tr, tc = available[math.floor(crypto_random() * len(available))]
                 occ = ans[tr][tc]
-                if occ == name1:
-                    already_ok = True
-                    break
-                conflict = False
-                if occ and occ != ' ':
-                    if occ in fixed_seats and fixed_seats[occ] == (tr, tc):
-                        conflict = True
-                    if occ in protected_by_rule3:
-                        conflict = True
-                    if occ in protected_by_distance:
-                        conflict = True
-                    if occ in constraints:
-                        conflict = True
-                if not conflict:
-                    available.append((tr, tc))
-            if not already_ok and available:
-                pick = available[math.floor(crypto_random() * len(available))]
-                tr, tc = pick
-                occ = ans[tr][tc]
-                ans[tr][tc] = name1
-                ans[r1][c1] = occ if occ != name1 else ' '
-                protected_by_distance.add(name1)
-                add_constraint(name1, c_diag(name2))
+                ans[tr][tc] = mover
+                ans[cur[0]][cur[1]] = occ if occ != mover else ' '
+                protected_by_distance.add(mover)
+                return True
+
+            # ① 把甲挪到乙的斜角位 ② 甲的斜角位被占满时，改为把乙摆到甲的反向斜角位
+            done = False
+            if name1 not in fixed_seats:
+                done = take_seat(name1, (r1, c1), diag_cells((r2, c2), dir_opt, name1))
+            if not done and name2 not in fixed_seats:
+                done = take_seat(name2, (r2, c2), diag_cells((r1, c1), flip_diag_dir(dir_opt), name2))
+            # ③ 两人一起搬：乙在讲台那排/最后一排时"前方/后方"根本不存在
+            if not done and name1 not in fixed_seats and name2 not in fixed_seats:
+                def can_take(occ):
+                    if not occ or occ == ' ' or occ in (name1, name2):
+                        return True
+                    if occ in fixed_seats:
+                        return False
+                    if occ in protected_by_rule3 or occ in protected_by_distance or occ in constraints:
+                        return False
+                    return True
+
+                seats = [(r, c) for r in range(rows) for c in range(cols)]
+                for i in range(len(seats) - 1, 0, -1):
+                    j = math.floor(crypto_random() * (i + 1))
+                    seats[i], seats[j] = seats[j], seats[i]
+                combos = []
+                for tb in seats:
+                    if tb == (r2, c2):      # 乙原地不动的情况 ① 已试过
+                        continue
+                    if not pass_constraints(name2, tb[0], tb[1]) or not can_take(ans[tb[0]][tb[1]]):
+                        continue
+                    for ta in diag_cells(tb, dir_opt, name1):
+                        if not can_take(ans[ta[0]][ta[1]]):
+                            continue
+                        combos.append((ta, tb))
+                        if len(combos) >= 60:
+                            break
+                    if len(combos) >= 60:
+                        break
+                if combos:
+                    ta, tb = combos[math.floor(crypto_random() * len(combos))]
+                    move_student(name1, ta)
+                    move_student(name2, tb)
+                    protected_by_distance.add(name1)
+                    protected_by_distance.add(name2)
+                    done = True
+                # ③b 乙被"同桌规则"钉死时：连桌子一起换（同桌先搬到目标桌另一侧，乙再跟过去）
+                if not done:
+                    pp = (r2, c2 ^ 1)
+                    partner = ans[pp[0]][pp[1]]
+                    desk_pinned = any(getattr(f, 'desk_partner', None) == partner
+                                      for f in constraints.get(name2, ()))
+                    if desk_pinned and partner and partner != ' ' and partner not in (name1, name2) and partner not in fixed_seats:
+                        side = c2 & 1
+                        desks = [(r, c) for r in range(rows) for c in range(0, cols, 2)]
+                        for i in range(len(desks) - 1, 0, -1):
+                            j = math.floor(crypto_random() * (i + 1))
+                            desks[i], desks[j] = desks[j], desks[i]
+                        combos2 = []
+                        for d in desks:
+                            nb = (d[0], d[1] + side)
+                            np_ = (d[0], d[1] + (1 - side))
+                            if (r1, c1) in (nb, np_) or (r2, c2) in (nb, np_) or pp in (nb, np_):
+                                continue
+                            # 虚拟地把两人都放到目标桌，再校验双方约束（同桌约束是双向登记的）
+                            snapshot = (ans[nb[0]][nb[1]], ans[np_[0]][np_[1]], ans[r2][c2], ans[pp[0]][pp[1]])
+                            ans[nb[0]][nb[1]] = name2
+                            ans[np_[0]][np_[1]] = partner
+                            ans[r2][c2] = ' '
+                            ans[pp[0]][pp[1]] = ' '
+                            ok_both = (pass_constraints(name2, nb[0], nb[1])
+                                       and pass_constraints(partner, np_[0], np_[1]))
+                            (ans[nb[0]][nb[1]], ans[np_[0]][np_[1]], ans[r2][c2], ans[pp[0]][pp[1]]) = snapshot
+                            if not ok_both:
+                                continue
+                            if not can_take(ans[np_[0]][np_[1]]) or not can_take(ans[nb[0]][nb[1]]):
+                                continue
+                            for ta in diag_cells(nb, dir_opt, name1):
+                                if ta in ((r1, c1), (r2, c2), pp, nb, np_):
+                                    continue
+                                if not can_take(ans[ta[0]][ta[1]]):
+                                    continue
+                                combos2.append((ta, nb, np_, partner))
+                                break
+                            if len(combos2) >= 30:
+                                break
+                        if combos2:
+                            ta, nb, np_, partner = combos2[math.floor(crypto_random() * len(combos2))]
+                            # 先同桌、再乙、再甲；校验不通过则逆序回滚
+                            move_student(partner, np_)
+                            move_student(name2, nb)
+                            move_student(name1, ta)
+                            if pass_constraints(name1, ta[0], ta[1]) and pass_constraints(name2, nb[0], nb[1]):
+                                protected_by_distance.add(name1)
+                                protected_by_distance.add(name2)
+                                done = True
+                            else:
+                                move_student(name1, (r1, c1))
+                                move_student(name2, (r2, c2))
+                                move_student(partner, pp)
+            if done:
+                add_constraint(name1, c_diag(name2, dir_opt, aisle_opt))
+                add_constraint(name2, c_diag(name1, flip_diag_dir(dir_opt), aisle_opt))
             continue
 
         # 模式 '5'：行范围（1 基闭区间）  5 姓名 行起 行止 [概率]
@@ -766,7 +953,14 @@ def generate_html(path, students, rules, sorted_pairs,
             else:
                 rules_desc.append(f"不相邻: {r[1]}-{r[2]}")
         elif r[0] == 'B':
-            rules_desc.append(f"斜角: {r[1]}-{r[2]}")
+            parsed = parse_diag_options(r[3:])
+            dir_opt, aisle_opt = (parsed[0], parsed[1]) if parsed else (None, None)
+            extra = ''
+            if dir_opt:
+                extra += '前' if dir_opt == 'F' else '后'
+            if aisle_opt:
+                extra += '桌内' if aisle_opt == 'S' else '跨过道'
+            rules_desc.append(f"斜角: {r[1]}-{r[2]}" + (f"（甲在乙{extra}）" if extra else ""))
         elif r[0] == '5':
             rules_desc.append(f"行范围: {r[1]} 第{r[2]}-{r[3]}行")
         elif r[0] == 'A':
