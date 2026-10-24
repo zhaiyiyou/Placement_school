@@ -33,6 +33,21 @@ DIAG_AISLE_TOKENS = {
     '任': None, '任意': None, '不限': None, '-': None, '*': None,
 }
 
+# 教室课桌分组（过道位置）：12|3|4|5|6|78
+#   双人桌只有 (1,2)、(7,8)（0 基 (0,1)、(6,7)）；第 3~6 列是单人座，没有同桌；
+#   过道在 2|3、3|4、4|5、5|6、6|7 之间。
+DESK_PAIRS = ((0, 1), (6, 7))
+
+
+def desk_partner(c):
+    """返回该列的同桌列（0 基）；单人座返回 None"""
+    for a, b in DESK_PAIRS:
+        if c == a:
+            return b
+        if c == b:
+            return a
+    return None
+
 
 def parse_diag_options(tokens):
     """解析模式 B 的可选参数（方向/过道/概率），顺序任意。
@@ -116,7 +131,7 @@ def diag_match(r, c, pr, pc, dir_opt=None, aisle=None):
     if dir_opt == 'K' and dr != 1:
         return False
     if aisle:
-        same_desk = (c >> 1) == (pc >> 1)
+        same_desk = desk_partner(c) == pc
         if aisle == 'S' and not same_desk:
             return False
         if aisle == 'X' and same_desk:
@@ -221,12 +236,13 @@ def apply_correct_rules(ans, rules):
         return fn
 
     def c_desk(name_b):
-        # 同桌：同一行，且两列属于同一张课桌（每两列一桌，c ^ 1 是同桌列）
+        # 同桌：同一行，且两列属于同一张双人桌（布局 12|3|4|5|6|78）
+        # 0 基只有 (0,1)、(6,7) 两对；第 2~5 列是单人座，没有同桌。
         def fn(r, c):
             pos = _find_seat(ans, name_b)
             if pos is None:
                 return False
-            return r == pos[0] and (c ^ 1) == pos[1]
+            return r == pos[0] and desk_partner(c) == pos[1]
         fn.desk_partner = name_b  # 供模式 B 的 ③b 识别"被同桌规则钉死"
         return fn
 
@@ -466,20 +482,24 @@ def apply_correct_rules(ans, rules):
                     done = True
                 # ③b 乙被"同桌规则"钉死时：连桌子一起换（同桌先搬到目标桌另一侧，乙再跟过去）
                 if not done:
-                    pp = (r2, c2 ^ 1)
-                    partner = ans[pp[0]][pp[1]]
+                    # 乙只有在双人桌（1-2 / 7-8）上才可能被"同桌规则"钉死；单人座没有同桌位
+                    partner_col = desk_partner(c2)
+                    pp = None if partner_col is None else (r2, partner_col)
+                    partner = ans[pp[0]][pp[1]] if pp else ' '
                     desk_pinned = any(getattr(f, 'desk_partner', None) == partner
                                       for f in constraints.get(name2, ()))
-                    if desk_pinned and partner and partner != ' ' and partner not in (name1, name2) and partner not in fixed_seats:
-                        side = c2 & 1
-                        desks = [(r, c) for r in range(rows) for c in range(0, cols, 2)]
+                    if (partner_col is not None and desk_pinned and partner and partner != ' '
+                            and partner not in (name1, name2) and partner not in fixed_seats):
+                        side = 1 if c2 > partner_col else 0   # 1 = 乙在右座
+                        desks = [(r, pair) for r in range(rows) for pair in DESK_PAIRS]
                         for i in range(len(desks) - 1, 0, -1):
                             j = math.floor(crypto_random() * (i + 1))
                             desks[i], desks[j] = desks[j], desks[i]
                         combos2 = []
                         for d in desks:
-                            nb = (d[0], d[1] + side)
-                            np_ = (d[0], d[1] + (1 - side))
+                            pair = d[1]
+                            nb = (d[0], pair[side])
+                            np_ = (d[0], pair[1 - side])
                             if (r1, c1) in (nb, np_) or (r2, c2) in (nb, np_) or pp in (nb, np_):
                                 continue
                             # 虚拟地把两人都放到目标桌，再校验双方约束（同桌约束是双向登记的）
@@ -604,7 +624,8 @@ def apply_correct_rules(ans, rules):
             continue
 
         # 模式 '0' / '1'（只写两个名字）：必须同桌
-        # 每两列一张课桌（0 基配对 (0,1)(2,3)(4,5)(6,7)），c ^ 1 为同桌列
+        # 教室布局 12|3|4|5|6|78：只有 (1,2)、(7,8) 是双人桌（0 基 (0,1)、(6,7)），
+        # 第 3~6 列是单人座，没有同桌。
         # 依次尝试：① 甲坐过去 ② 乙坐过来 ③ 另找一张空桌两人一起搬过去
         if mode_id in ('0', '1') and len(rule) == 3:
             name1, name2 = rule[1], rule[2]
@@ -623,7 +644,7 @@ def apply_correct_rules(ans, rules):
                     fixed_seats[n] = (fr, fc)
             r1, c1 = pos1
             r2, c2 = pos2
-            if r1 == r2 and (c1 ^ 1) == c2:
+            if r1 == r2 and desk_partner(c1) == c2:
                 add_constraint(name1, c_desk(name2))
                 add_constraint(name2, c_desk(name1))
                 continue
@@ -636,7 +657,10 @@ def apply_correct_rules(ans, rules):
                 pa = _find_seat(ans, anchor)
                 if pm is None or pa is None:
                     return False
-                tr, tc = pa[0], pa[1] ^ 1
+                tc = desk_partner(pa[1])
+                if tc is None:      # 对方在单人座，没有同桌位可坐
+                    return False
+                tr = pa[0]
                 if not pass_constraints(mover, tr, tc):
                     return False
                 occ = ans[tr][tc]
@@ -655,13 +679,13 @@ def apply_correct_rules(ans, rules):
             # ① 甲坐过去 ② 乙坐过来 ③ 另找一张空桌两人一起搬过去
             done = try_move_to(name1, name2) or try_move_to(name2, name1)
             if not done and name1 not in fixed_seats and name2 not in fixed_seats:
-                desks = [(r, c) for r in range(rows) for c in range(0, cols, 2)]
+                desks = [(r, pair) for r in range(rows) for pair in DESK_PAIRS]
                 for i in range(len(desks) - 1, 0, -1):
                     j = math.floor(crypto_random() * (i + 1))
                     desks[i], desks[j] = desks[j], desks[i]
-                for dr, dc in desks:
-                    for (ma, ta), (mb, tb) in (((name1, (dr, dc)), (name2, (dr, dc + 1))),
-                                               ((name1, (dr, dc + 1)), (name2, (dr, dc)))):
+                for dr, pair in desks:
+                    for (ma, ta), (mb, tb) in (((name1, (dr, pair[0])), (name2, (dr, pair[1]))),
+                                               ((name1, (dr, pair[1])), (name2, (dr, pair[0])))):
                         occs = [ans[ta[0]][ta[1]], ans[tb[0]][tb[1]]]
                         ok_occ = True
                         for occ in occs:

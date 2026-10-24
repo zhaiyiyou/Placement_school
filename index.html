@@ -869,7 +869,7 @@
                 <div class="title-bar-left">
                     <div class="app-icon">📐</div>
                     <span class="app-title">iAxiom Placement System</span>
-                    <span class="app-version">v9.6.0</span>
+                    <span class="app-version">v9.7.0</span>
                 </div>
                 <div class="title-bar-right">
                     <span class="mode-badge normal" id="modeBadge">普通模式</span>
@@ -1145,6 +1145,22 @@
                 ['跨', 'X'], ['过道', 'X'], ['过', 'X'], ['跨过道', 'X'], ['隔', 'X'], ['X', 'X'], ['x', 'X'],
                 ['任', null], ['任意', null], ['不限', null], ['-', null], ['*', null]
             ]);
+
+            // ============ 教室课桌分组（过道位置） ============
+            // 实际布局：12|3|4|5|6|78
+            //   双人桌只有 (1,2)、(7,8)（0 基 (0,1)、(6,7)）；
+            //   第 3~6 列是单人座，没有同桌；
+            //   过道在 2|3、3|4、4|5、5|6、6|7 之间。
+            const DESK_PAIRS = [[0, 1], [6, 7]];
+            // 返回该列的同桌列（0 基）；单人座返回 null
+            const deskPartnerOf = (c) => {
+                if (c === 0) return 1;
+                if (c === 1) return 0;
+                if (c === 6) return 7;
+                if (c === 7) return 6;
+                return null;
+            };
+            const isSameDesk = (c1, c2) => deskPartnerOf(c1) === c2;
 
             // ============ 主应用类 ============
             class SeatAllocatorApp {
@@ -2306,7 +2322,8 @@
                     // 斜角（甲相对乙）：|Δ行|=1 且 |Δ列|=1
                     //   dir   : 'F' 甲在乙前方（行号小，靠讲台）| 'K' 甲在乙后方（行号大）| null 不限
                     //   aisle : 'S' 甲与乙在同一张课桌里（不跨过道）| 'X' 必须跨过道 | null 不限
-                    // 同一张桌 = 列组相同（每两列一桌，c >> 1 相同），斜角跨不跨过道正好由它区分。
+                    // 同一张桌 = 两列属于 DESK_PAIRS 中的同一张双人桌（(1,2) 或 (7,8)）；
+                    // 中间 3~6 列是单人座，任何斜角都算"跨过道"。
                     // 纯位置判据（不读 posMap），便于"先把乙摆到某处再验证甲"。
                     const diagMatch = (r, c, pr, pc, dir, aisle) => {
                         const dr = r - pr, dc = c - pc;
@@ -2315,7 +2332,7 @@
                         if (dir === 'F' && dr !== -1) return false;
                         if (dir === 'K' && dr !== 1) return false;
                         if (aisle) {
-                            const sameDesk = (c >> 1) === (pc >> 1);
+                            const sameDesk = isSameDesk(c, pc);
                             if (aisle === 'S' ? !sameDesk : sameDesk) return false;
                         }
                         return true;
@@ -2329,15 +2346,15 @@
                     };
                     const flipDiagDir = (dir) => (dir === 'F' ? 'K' : dir === 'K' ? 'F' : dir);
                     const C_corner = () => (r, c) => (r === 0 || r === R - 1) && (c === 0 || c === C - 1);
-                    // 同桌：同一行，且两列属于同一张课桌（每两列一桌，中间是过道）
-                    // 0 基列号配对为 (0,1) (2,3) (4,5) (6,7)，即 c ^ 1 是同桌列
+                    // 同桌：同一行，且两列属于同一张双人桌（布局 12|3|4|5|6|78）
+                    // 0 基只有 (0,1)、(6,7) 两对；第 2~5 列是单人座，没有同桌。
                     // fn.deskPartner 记录"和谁同桌"，模式 B 的 ③b（整桌搬迁）靠它识别"被同桌规则钉死"
                     const C_desk = (nb) => {
                         ruleLocked.add(nb);
                         const fn = (r, c) => {
                             const pb = posMap.get(nb);
                             if (!pb) return false;
-                            return r === pb.r && (c ^ 1) === pb.c;
+                            return r === pb.r && isSameDesk(c, pb.c);
                         };
                         fn.deskPartner = nb;
                         return fn;
@@ -2633,18 +2650,20 @@
                                 // ③b 乙被"同桌规则"钉死（只能待在自己的桌上）时：连桌子一起换
                                 //    —— 先把同桌挪到目标桌的另一侧，乙跟着过去，再把甲摆到斜角位
                                 if (!done) {
-                                    const pp = { r: p2.r, c: p2.c ^ 1 };
-                                    const partner = this.ans[pp.r][pp.c];
+                                    // 乙只有在双人桌（1-2 / 7-8）上才可能被"同桌规则"钉死；单人座没有同桌位
+                                    const partnerCol = deskPartnerOf(p2.c);
+                                    const pp = partnerCol === null ? null : { r: p2.r, c: partnerCol };
+                                    const partner = pp ? this.ans[pp.r][pp.c] : ' ';
                                     // 只在乙真的被"同桌规则"钉在这张桌子上时才整桌搬迁
                                     const deskPinned = (constraintMap.get(n2) || []).some(f => f && f.deskPartner === partner);
-                                    if (deskPinned && partner !== ' ' && partner !== n1 && !fixedSeats.has(partner)) {
-                                        const side = p2.c & 1;
+                                    if (partnerCol !== null && deskPinned && partner !== ' ' && partner !== n1 && !fixedSeats.has(partner)) {
+                                        const side = p2.c > partnerCol ? 1 : 0;   // 1 = 乙在右座
                                         const desks = [];
-                                        for (let r = 0; r < R; r++) for (let c = 0; c < C; c += 2) desks.push({ r, c });
+                                        for (let r = 0; r < R; r++) for (const [a, b] of DESK_PAIRS) desks.push({ r, a, b });
                                         const combos2 = [];
                                         for (const d of shuffleList(desks)) {
-                                            const nb = { r: d.r, c: d.c + side };
-                                            const np = { r: d.r, c: d.c + (1 - side) };
+                                            const nb = { r: d.r, c: side === 1 ? d.b : d.a };
+                                            const np = { r: d.r, c: side === 1 ? d.a : d.b };
                                             if (samePos(nb, p1) || samePos(np, p1) || samePos(nb, p2) || samePos(np, p2) || samePos(np, pp)) continue;
                                             // 虚拟地把两人都放到目标桌，检查双方的全部约束（同桌约束是双向登记的）
                                             const oldB = posMap.get(n2), oldPartner = posMap.get(partner);
@@ -2695,15 +2714,15 @@
                         }
 
                         // === 模式 '0' / '1'（只写两个名字）：必须同桌 ===
-                        // 教室每两列一张课桌，过道在 列2|3、4|5、6|7 之间；
-                        // 同桌 = 同一行且列号为 (1,2)(3,4)(5,6)(7,8) 之一（0 基即 c ^ 1）。
+                        // 教室布局 12|3|4|5|6|78：只有 (1,2)、(7,8) 是双人桌（0 基 (0,1)、(6,7)），
+                        // 第 3~6 列是单人座，没有同桌；过道在 2|3、3|4、4|5、5|6、6|7 之间。
                         // 依次尝试：① 让甲坐到乙的同桌位 ② 让乙坐到甲的同桌位 ③ 另找一张空桌让两人一起搬过去
                         if ((modeId === '0' || modeId === '1') && rule.length === 3) {
                             const n1 = rule[1], n2 = rule[2];
                             if (n1 === n2) continue;
                             const p1 = posMap.get(n1), p2 = posMap.get(n2);
                             if (!p1 || !p2) continue;
-                            if (p1.r === p2.r && (p1.c ^ 1) === p2.c) {
+                            if (p1.r === p2.r && isSameDesk(p1.c, p2.c)) {
                                 addPairConstraint(n1, n2, (x) => C_desk(x));
                                 continue;
                             }
@@ -2712,16 +2731,18 @@
                             const moveToMate = (mover, anchor) => {
                                 if (fixedSeats.has(mover)) return false;
                                 const pm = posMap.get(mover), pa = posMap.get(anchor);
-                                const tr = pa.r, tc = pa.c ^ 1;
+                                const tc = deskPartnerOf(pa.c);
+                                if (tc === null) return false;   // 对方在单人座，没有同桌位可坐
+                                const tr = pa.r;
                                 if (!passConstraints(mover, tr, tc)) return false;
                                 const avail = this._tryCollectAvailable([{ r: tr, c: tc }], mover, posMap, fixedSeats, protectedByRule3, protectedByDistance, constraintMap);
                                 return this._pickAndSwap(avail, pm.r, pm.c, posMap, protectedByDistance);
                             };
                             done = moveToMate(n1, n2) || moveToMate(n2, n1);
-                            // ③ 两个同桌位都被占用时：随机找一张桌子，把两人一起搬过去
+                            // ③ 两个同桌位都被占用时：随机找一张双人桌，把两人一起搬过去
                             if (!done && !fixedSeats.has(n1) && !fixedSeats.has(n2)) {
                                 const desks = [];
-                                for (let r = 0; r < R; r++) for (let c = 0; c < C; c += 2) desks.push({ r, c });
+                                for (let r = 0; r < R; r++) for (const [a, b] of DESK_PAIRS) desks.push({ r, a, b });
                                 for (let i = desks.length - 1; i > 0; i--) {
                                     const j = Math.floor(rng() * (i + 1));
                                     [desks[i], desks[j]] = [desks[j], desks[i]];
@@ -2729,7 +2750,7 @@
                                 const canTake = (occ, a, b) => !occ || occ === ' ' || occ === a || occ === b ||
                                     (!protectedByRule3.has(occ) && !protectedByDistance.has(occ) && !constraintMap.has(occ) && !fixedSeats.has(occ));
                                 for (const d of desks) {
-                                    const s1 = { r: d.r, c: d.c }, s2 = { r: d.r, c: d.c + 1 };
+                                    const s1 = { r: d.r, c: d.a }, s2 = { r: d.r, c: d.b };
                                     // 两种分配都试：甲左乙右 / 甲右乙左
                                     for (const [ma, ta, mb, tb] of [[n1, s1, n2, s2], [n1, s2, n2, s1]]) {
                                         if (!canTake(this.ans[ta.r][ta.c], ma, mb)) continue;
